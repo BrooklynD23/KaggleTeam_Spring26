@@ -1,0 +1,41 @@
+# Track B: Usefulness Ranking
+extends: "configs/base.yaml"
+
+track:
+  name: "track_b"
+  label: "Snapshot Usefulness Ranking"
+
+snapshot:
+  # Set after ingestion based on MAX(review_date)
+  reference_date: "2022-01-19"
+  dataset_tag: "yelp_academic_2022"
+
+age_buckets:
+  thresholds_days: [90, 180, 365, 730, 1825]
+  labels: ["A: 0-90d", "B: 91-180d", "C: 181-365d", "D: 366-730d", "E: 731d-5y", "F: 5y+"]
+
+ranking_groups:
+  # Business-level groups (primary)
+  business:
+    min_group_size: 5
+    min_distinct_useful: 2
+  # Category-city fallback groups
+  category_city:
+    min_group_size: 10
+    min_distinct_useful: 3
+
+labels:
+  primary: "within_group_percentile"
+  secondary: "top_decile"
+  graded_bins: [0, 1, 2, 4, 9]
+
+leakage:
+  # Fields that MUST NOT be used as features
+  banned_features:
+    - "review.funny"
+    - "review.cool"
+
+quality:
+  useful_nonnull_threshold: 0.999
+  min_qualifying_groups: 1000
+  max_single_class_fraction: 0.90
