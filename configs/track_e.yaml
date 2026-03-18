@@ -1,0 +1,48 @@
+# Track E: Bias and Disparity Audit
+extends: "configs/base.yaml"
+
+track:
+  name: "track_e"
+  label: "Bias and Disparity Audit"
+
+subgroups:
+  min_group_size: 10              # minimum businesses/reviews for any reported aggregate
+  top_n_cities: 20                # cities for detailed subgroup analysis
+  min_city_reviews: 500           # minimum review count for a city to be a subgroup
+  category_aggregation: "primary" # "primary" = first listed category
+  price_tier_labels:              # mapping from RestaurantsPriceRange2 integer to label
+    1: "low"
+    2: "medium"
+    3: "high"
+    4: "premium"
+  price_tier_missing_label: "missing"
+  review_volume_tier_boundaries: [10, 50]  # creates: <10, 10-50, 50+
+
+disparity:
+  ks_test_significance: 0.05      # KS test p-value threshold
+  min_pairwise_comparisons: 10    # minimum subgroup pairs for star disparity
+
+imbalance:
+  gini_top_pct: 10                # top-N% share metric
+  gini_bottom_pct: 10             # bottom-N% share metric
+
+proxy:
+  correlation_threshold: 0.3      # |r| above this flags a feature as proxy risk
+  candidate_features:             # features to test for proxy correlation
+    - "review_count_asof"
+    - "avg_stars_asof"
+    - "text_length_mean_asof"
+    - "useful_mean_asof"
+
+fairness:
+  demographic_parity_threshold: 0.1  # max acceptable gap in mean metric between subgroups
+  coverage_parity_min_ratio: 0.5     # minority/majority review count ratio
+
+simpson:
+  enabled: true                   # must conduct at least one stratified check
+  conditioning_variable: "primary_category"  # default variable to condition on
+
+quality:
+  min_price_tier_coverage: 0.25   # at least 25% of businesses must have a price tier
+  min_subgroup_dimensions: 3      # must define subgroups on at least 3 dimensions
+  min_ks_comparisons: 10
