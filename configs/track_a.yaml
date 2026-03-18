@@ -1,0 +1,38 @@
+# Track A: Future Star Rating Prediction
+extends: "configs/base.yaml"
+
+track:
+  name: "track_a"
+  label: "Future Star Rating Prediction"
+
+splits:
+  # Placeholders -- finalized during Stage 5
+  t1: "2019-06-01"
+  t2: "2020-09-01"
+  # Candidate percentiles to evaluate
+  candidates:
+    - { t1_pct: 65, t2_pct: 82 }
+    - { t1_pct: 70, t2_pct: 85 }
+    - { t1_pct: 70, t2_pct: 90 }
+    - { t1_pct: 75, t2_pct: 88 }
+
+eda:
+  sentiment_sample_size: 50000
+  sentiment_random_seed: 42
+  cold_start_threshold: 5
+
+leakage:
+  # Fields that MUST NOT be used as Track A features
+  banned_features:
+    - "business.stars"
+    - "business.review_count"
+    - "business.is_open"
+    - "user.average_stars"
+    - "user.review_count"
+    - "user.fans"
+    - "user.elite"
+
+quality:
+  ks_threshold: 0.05
+  min_split_fraction: 0.10
+  text_nonnull_threshold: 0.99
