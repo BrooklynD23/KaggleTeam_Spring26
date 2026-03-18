@@ -1,0 +1,43 @@
+# Shared configuration for all tracks
+project:
+  name: "yelp-semester-project"
+  version: "1.0"
+
+paths:
+  raw_dir: "data/raw"
+  interim_dir: "data/interim"
+  curated_dir: "data/curated"
+  outputs_dir: "outputs"
+  figures_dir: "outputs/figures"
+  tables_dir: "outputs/tables"
+  logs_dir: "outputs/logs"
+  db_path: "data/yelp.duckdb"
+
+ingestion:
+  tar_path: "data/raw/Yelp-JSON/Yelp JSON/yelp_dataset.tar"
+  memory_limit_gb: 4
+  threads: 4
+  parquet_compression: "zstd"
+
+entities:
+  - name: "business"
+    source_file: "yelp_academic_dataset_business.json"
+    primary_key: "business_id"
+  - name: "review"
+    source_file: "yelp_academic_dataset_review.json"
+    primary_key: "review_id"
+  - name: "user"
+    source_file: "yelp_academic_dataset_user.json"
+    primary_key: "user_id"
+  - name: "tip"
+    source_file: "yelp_academic_dataset_tip.json"
+    primary_key: null
+  - name: "checkin"
+    source_file: "yelp_academic_dataset_checkin.json"
+    primary_key: "business_id"
+
+quality:
+  review_fact_max_row_loss_fraction: 0.001
+
+random_seed: 42
+log_level: "INFO"
