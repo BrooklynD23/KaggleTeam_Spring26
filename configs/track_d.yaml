@@ -1,0 +1,50 @@
+# Track D: Cold-Start Recommender
+extends: "configs/base.yaml"
+
+track:
+  name: "track_d"
+  label: "Cold-Start Recommender"
+
+splits:
+  t1: "2019-06-01"
+  t2: "2020-09-01"
+  require_stage5_artifact: true
+
+cold_start:
+  d1_thresholds:
+    zero_history: 0
+    sparse_history: 3
+    emerging: 10
+  d1_recency_windows_days: [30, 90]
+  d2_k_values: [0, 1, 3]
+  d2_primary_k: 0
+
+interaction:
+  d2_interaction_basis: "reviews_plus_tips"
+  same_day_review_policy: "batch"
+  tip_granularity: "day"
+
+baseline:
+  min_support_reviews: 3
+  candidate_set_max_size: 100
+
+evaluation:
+  recall_k: [5, 10, 20]
+  ndcg_k: [5, 10, 20]
+
+leakage:
+  banned_fields:
+    - "business.stars"
+    - "business.review_count"
+    - "business.is_open"
+    - "user.average_stars"
+    - "user.review_count"
+    - "user.fans"
+    - "user.elite"
+  hard_gate: true
+
+quality:
+  min_d1_cohort_size: 500
+  min_d2_cohort_size: 1000
+  min_feature_coverage: 0.80
+  min_d2_feature_coverage: 0.70

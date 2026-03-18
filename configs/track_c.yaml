@@ -1,0 +1,43 @@
+# Track C: Sentiment and Topic Drift
+extends: "configs/base.yaml"
+
+track:
+  name: "track_c"
+  label: "Sentiment and Topic Drift"
+
+geography:
+  min_city_reviews: 1000
+  top_n_cities: 20
+
+temporal:
+  bin_granularity: "month"
+  min_reviews_per_bin: 30
+
+nlp:
+  sentiment_engine: "textblob"
+  sample_size: 100000
+  random_seed: 42
+  keyword_list:
+    - "delivery"
+    - "outdoor"
+    - "takeout"
+    - "mask"
+    - "covid"
+    - "wait"
+    - "service"
+    - "price"
+    - "parking"
+    - "reservation"
+  tfidf_n_clusters: 10
+  tfidf_sample_size: 50000
+
+drift:
+  slope_p_threshold: 0.05
+  rolling_window_months: 6
+
+events:
+  inactivity_close_proxy_days: 180
+
+quality:
+  sentiment_star_correlation_min: 0.3
+  min_analyzable_cities: 5
