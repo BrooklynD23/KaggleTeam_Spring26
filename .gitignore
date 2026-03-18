@@ -1,0 +1,29 @@
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local virtual environments
+.venv/
+.venv-*/
+.wsl-pytest-venv/
+
+# Local AI/editor artifacts
+.claude/
+CoWork Planning/.claude/
+
+# Generated data and outputs
+data/raw/
+data/interim/
+outputs/
+
+# Large local/raw planning datasets
+CoWork Planning/Dataset(Raw)/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
