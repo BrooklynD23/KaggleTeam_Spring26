@@ -1,0 +1,38 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+cd "$repo_root"
+
+# ── Resolve Python interpreter (prefer venv) ──────────────────────────────────
+if [ -x "$repo_root/.venv/Scripts/python.exe" ]; then
+    PYTHON="$repo_root/.venv/Scripts/python.exe"
+elif [ -x "$repo_root/.venv/bin/python" ]; then
+    PYTHON="$repo_root/.venv/bin/python"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON="python"
+elif command -v py >/dev/null 2>&1; then
+    PYTHON="py -3"
+else
+    echo "pre-commit hook failed: no Python interpreter was found." >&2
+    echo "Create the repo virtual environment or make python or py available on PATH." >&2
+    exit 1
+fi
+
+# ── 1. README drift check ─────────────────────────────────────────────────────
+$PYTHON scripts/check_repo_readme_drift.py --check
+
+# ── 2. Auto-bump version in any staged CLAUDE.md ─────────────────────────────
+# Collect staged CLAUDE.md paths relative to repo root
+staged_claude=$(git diff --cached --name-only --diff-filter=ACM | grep 'CLAUDE\.md$' || true)
+
+if [ -n "$staged_claude" ]; then
+    echo "Bumping version in staged CLAUDE.md file(s):"
+    for f in $staged_claude; do
+        $PYTHON scripts/update_frontmatter.py --bump "$f"
+        git add "$f"
+    done
+fi
+
+# ── 3. CLAUDE.md frontmatter validation ───────────────────────────────────────
+$PYTHON scripts/update_frontmatter.py --check

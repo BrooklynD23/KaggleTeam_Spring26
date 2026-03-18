@@ -17,12 +17,15 @@ __pycache__/
 CoWork Planning/.claude/
 
 # Generated data and outputs
+data/
 data/raw/
 data/interim/
 outputs/
 
 # Large local/raw planning datasets
 CoWork Planning/Dataset(Raw)/
+CoWork Planning/yelp_project/docs/intern/.changes_manifest.json
+CoWork Planning/ziHTsTkF
 
 # OS/editor noise
 .DS_Store
