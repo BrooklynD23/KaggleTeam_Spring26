@@ -23,12 +23,14 @@ fi
 $PYTHON scripts/check_repo_readme_drift.py --check
 
 # ── 2. Auto-bump version in any staged CLAUDE.md ─────────────────────────────
-# Collect staged CLAUDE.md paths relative to repo root
+# Collect staged CLAUDE.md paths relative to repo root.
+# Use line-safe iteration to preserve spaces in file paths.
 staged_claude=$(git diff --cached --name-only --diff-filter=ACM | grep 'CLAUDE\.md$' || true)
 
 if [ -n "$staged_claude" ]; then
     echo "Bumping version in staged CLAUDE.md file(s):"
-    for f in $staged_claude; do
+    printf '%s\n' "$staged_claude" | while IFS= read -r f; do
+        [ -n "$f" ] || continue
         $PYTHON scripts/update_frontmatter.py --bump "$f"
         git add "$f"
     done
