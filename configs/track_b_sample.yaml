@@ -1,0 +1,5 @@
+# Track B sample config for notebook EDA (uses data/sample)
+extends: "configs/track_b.yaml"
+
+paths:
+  curated_dir: "data/sample"

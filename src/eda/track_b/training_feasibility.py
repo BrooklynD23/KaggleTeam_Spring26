@@ -11,6 +11,7 @@ import duckdb
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_b.common import TrackBPaths, ensure_output_dirs, resolve_paths
 
 logger = logging.getLogger(__name__)
@@ -26,13 +27,13 @@ def _load_stage4_labels(
             f"Missing Stage 4 label candidates: {label_candidates_path}"
         )
 
+    pq_str = str(label_candidates_path).replace("\\", "/")
     con.execute(
-        """
+        f"""
         CREATE OR REPLACE TEMP VIEW track_b_label_candidates AS
         SELECT *
-        FROM read_parquet(?)
-        """,
-        [str(label_candidates_path)],
+        FROM read_parquet('{pq_str}')
+        """
     )
 
 
@@ -216,7 +217,7 @@ def main() -> None:
     ensure_output_dirs(paths)
 
     label_candidates_path = paths.tables_dir / "track_b_s4_label_candidates.parquet"
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         _load_stage4_labels(con, label_candidates_path)
         group_level = _compute_group_level_stats(con)

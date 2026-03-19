@@ -36,8 +36,24 @@ entities:
     source_file: "yelp_academic_dataset_checkin.json"
     primary_key: "business_id"
 
+duckdb:
+  memory_limit_gb: 8
+  threads: 8
+  preserve_insertion_order: false
+
 quality:
   review_fact_max_row_loss_fraction: 0.001
 
 random_seed: 42
 log_level: "INFO"
+
+# Sample config for build_sample (notebook EDA)
+sample:
+  sample_size: 20000
+  sample_strata: ["review_year", "review_stars"]
+  sample_dir: "data/sample"
+
+# Optional GPU acceleration (cudf-polars). Set YELP_POLARS_ENGINE=gpu by the
+# pipeline launcher when GPU packages are installed. See docs/gpu_acceleration.md.
+gpu:
+  enabled: true  # launcher auto-detects; stages use env var

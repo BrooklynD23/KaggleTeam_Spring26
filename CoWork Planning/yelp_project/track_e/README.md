@@ -11,8 +11,8 @@ Primary question:
 ## Current Status
 
 - Planning folder exists and is set up.
-- No implementation folder exists yet under `src/eda/track_e/`.
-- This track is currently documentation-only inside the repo.
+- Implementation folder exists at `src/eda/track_e/` with 9 EDA stage modules.
+- Pipeline is wired into the dispatcher and can be run via `python scripts/run_pipeline.py --approach track_e`.
 
 ## Key Documents
 
@@ -21,15 +21,13 @@ Primary question:
 - [Track E Claude context](CLAUDE.md)
 - [Top-level repo README](../../../README.md)
 
-## Planned Implementation Area
+## Implementation Area
 
-When implementation starts, the expected code location is:
-
-- `src/eda/track_e/`
+Code location: `src/eda/track_e/`
 
 ## Expected Deliverables
 
-Track E planning currently calls for:
+Track E planning calls for:
 
 - Subgroup definition and coverage profiling artifacts
 - Star and usefulness disparity tables
@@ -37,8 +35,8 @@ Track E planning currently calls for:
 - Baseline fairness metrics and mitigation candidates
 - Final summary markdown report
 
-## Current Gaps
+## Implementation Notes
 
-- No code modules yet.
-- No track-specific config file yet.
-- No output artifacts yet.
+- 9 stage modules: subgroup_definition, coverage_profile, star_disparity, usefulness_disparity, imbalance_analysis, proxy_risk, fairness_baseline, mitigation_candidates, summary_report.
+- Config: `configs/track_e.yaml`
+- Output artifacts: `outputs/tables/track_e_*`, `outputs/figures/track_e_*`, `outputs/logs/track_e_*`

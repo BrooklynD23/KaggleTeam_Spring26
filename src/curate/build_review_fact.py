@@ -12,8 +12,11 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+import polars as pl
+import pyarrow.parquet as pq
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 
 logger = logging.getLogger(__name__)
 
@@ -156,31 +159,51 @@ def _validate_row_loss(
     return "PASS"
 
 
+_EXPORT_BATCH_SIZE = 500_000
+
+
 def _export_parquet(
     con: duckdb.DuckDBPyConnection,
     table_or_query: str,
     output_path: Path,
     compression: str = "zstd",
 ) -> None:
-    """Export a table or query result to a Parquet file."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    file_str = str(output_path).replace("\\", "/")
+    """Export a table or query result to a Parquet file via streaming batches.
 
-    # If it looks like a table/view name (no spaces), use COPY
+    Uses ``fetch_record_batch`` so that only one batch is held in memory at
+    a time, preventing OOM on large tables like ``review`` (~7 M rows).
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     if " " not in table_or_query:
         table_ref = f'"{table_or_query}"' if table_or_query == "user" else table_or_query
-        sql = (
-            f"COPY {table_ref} TO '{file_str}' "
-            f"(FORMAT PARQUET, COMPRESSION '{compression}')"
-        )
+        sql = f"SELECT * FROM {table_ref}"
     else:
-        sql = (
-            f"COPY ({table_or_query}) TO '{file_str}' "
-            f"(FORMAT PARQUET, COMPRESSION '{compression}')"
-        )
+        sql = table_or_query
 
-    con.execute(sql)
-    logger.info("Exported Parquet: %s", output_path)
+    result = con.execute(sql)
+    fetch = getattr(result, "fetch_record_batch", None)
+    if fetch is None:
+        fetch = result.to_arrow_reader
+    reader = fetch(rows_per_batch=_EXPORT_BATCH_SIZE)
+
+    writer: pq.ParquetWriter | None = None
+    total_rows = 0
+    try:
+        for batch in reader:
+            if batch.num_rows == 0:
+                continue
+            if writer is None:
+                writer = pq.ParquetWriter(
+                    str(output_path), batch.schema, compression=compression,
+                )
+            writer.write_batch(batch)
+            total_rows += batch.num_rows
+    finally:
+        if writer is not None:
+            writer.close()
+
+    logger.info("Exported Parquet: %s (%d rows)", output_path, total_rows)
 
 
 def _build_snapshot_metadata(
@@ -217,34 +240,59 @@ def _export_checkin_expanded(
     logs_dir: Path,
     compression: str,
 ) -> None:
-    """Export per-date checkin rows and log any invalid timestamp values."""
-    invalid_rows = con.execute(CHECKIN_INVALID_SQL).fetchall()
-    if invalid_rows:
+    """Export per-date checkin rows and log any invalid timestamp values.
+
+    The comma-separated checkin_dates column can expand into tens of millions
+    of rows.  DuckDB's in-engine UNNEST easily exceeds available RAM on a
+    typical workstation, so the expansion is performed in Polars which
+    processes it column-at-a-time with far lower peak memory.
+    """
+    raw = con.execute("SELECT business_id, checkin_dates FROM checkin").pl()
+
+    expanded = (
+        raw
+        .with_columns(pl.col("checkin_dates").str.split(","))
+        .explode("checkin_dates")
+        .with_columns(pl.col("checkin_dates").str.strip_chars())
+        .filter(pl.col("checkin_dates") != "")
+    )
+
+    parsed = expanded.with_columns(
+        pl.col("checkin_dates")
+        .str.to_datetime(format=None, strict=False)
+        .cast(pl.Date)
+        .alias("checkin_date"),
+    )
+
+    invalid = parsed.filter(pl.col("checkin_date").is_null())
+    if len(invalid) > 0:
         logs_dir.mkdir(parents=True, exist_ok=True)
         invalid_path = logs_dir / "checkin_expanded_invalid_rows.jsonl"
         with open(invalid_path, "w", encoding="utf-8") as fh:
-            for business_id, raw_value in invalid_rows:
+            for row in invalid.select("business_id", "checkin_dates").iter_rows(named=True):
                 fh.write(
                     json.dumps(
                         {
-                            "business_id": business_id,
-                            "raw_checkin_value": raw_value,
+                            "business_id": row["business_id"],
+                            "raw_checkin_value": row["checkin_dates"],
                         }
                     )
                     + "\n"
                 )
         logger.warning(
             "Dropped %d invalid check-in timestamps; details written to %s",
-            len(invalid_rows),
+            len(invalid),
             invalid_path,
         )
 
-    _export_parquet(
-        con,
-        CHECKIN_EXPANDED_SQL,
-        curated_dir / "checkin_expanded.parquet",
-        compression,
+    valid = parsed.filter(pl.col("checkin_date").is_not_null()).select(
+        "business_id", "checkin_date",
     )
+
+    curated_dir.mkdir(parents=True, exist_ok=True)
+    out_path = curated_dir / "checkin_expanded.parquet"
+    valid.write_parquet(str(out_path), compression=compression)
+    logger.info("Exported Parquet: %s (%d rows)", out_path, len(valid))
 
 
 def run(config: dict[str, Any]) -> None:
@@ -261,12 +309,7 @@ def run(config: dict[str, Any]) -> None:
     if not db_path.is_file():
         raise FileNotFoundError(f"DuckDB database not found: {db_path}")
 
-    con = duckdb.connect(str(db_path))
-    temp_dir = Path("/tmp/kaggleteam_duckdb_tmp")
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    temp_dir_str = str(temp_dir).replace("\\", "/")
-    con.execute(f"PRAGMA temp_directory='{temp_dir_str}'")
-    logger.info("DuckDB temp_directory=%s", temp_dir)
+    con = connect_duckdb(config, db_path=db_path)
     try:
         # Step 1: Build review_fact table
         logger.info("Building review_fact table...")
@@ -292,7 +335,8 @@ def run(config: dict[str, Any]) -> None:
         if status == "FAIL":
             raise RuntimeError("Row-loss validation failed; review_fact exports aborted")
 
-        # Step 4: Export Parquet files
+        # Step 4: Export Parquet files — checkpoint first to reclaim memory
+        con.execute("CHECKPOINT")
         curated_dir.mkdir(parents=True, exist_ok=True)
 
         _export_parquet(con, "review_fact", curated_dir / "review_fact.parquet", compression)

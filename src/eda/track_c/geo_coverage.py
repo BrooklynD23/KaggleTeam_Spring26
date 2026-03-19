@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_c.common import (
     ensure_output_dirs,
     resolve_paths,
@@ -31,8 +32,10 @@ def build_city_coverage(
     min_city_reviews: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Build Track C city/state coverage tables."""
+    pq_review = str(review_fact_path).replace("\\", "/")
+    pq_business = str(business_path).replace("\\", "/")
     city_df = con.execute(
-        """
+        f"""
         WITH review_city AS (
             SELECT
                 city,
@@ -44,7 +47,7 @@ def build_city_coverage(
                 MAX(review_date)::VARCHAR AS last_review_date,
                 AVG(latitude) AS latitude,
                 AVG(longitude) AS longitude
-            FROM read_parquet($1)
+            FROM read_parquet('{pq_review}')
             GROUP BY city, normalized_city, state
         ),
         business_city AS (
@@ -52,7 +55,7 @@ def build_city_coverage(
                 LOWER(TRIM(city)) AS normalized_city,
                 state,
                 COUNT(DISTINCT business_id) AS business_count
-            FROM read_parquet($2)
+            FROM read_parquet('{pq_business}')
             GROUP BY normalized_city, state
         )
         SELECT
@@ -72,7 +75,7 @@ def build_city_coverage(
          AND rc.state = bc.state
         ORDER BY rc.review_count DESC, rc.city
         """,
-        [review_fact_path, business_path, min_city_reviews],
+        [min_city_reviews],
     ).fetchdf()
 
     if city_df.empty:
@@ -91,14 +94,14 @@ def build_city_coverage(
         )
 
     variant_df = con.execute(
-        """
+        f"""
         WITH raw_city AS (
             SELECT
                 LOWER(TRIM(city)) AS normalized_city,
                 state,
                 city,
                 COUNT(*) AS review_count
-            FROM read_parquet($1)
+            FROM read_parquet('{pq_review}')
             GROUP BY normalized_city, state, city
         )
         SELECT
@@ -111,8 +114,7 @@ def build_city_coverage(
         GROUP BY normalized_city, state
         HAVING COUNT(*) > 1
         ORDER BY combined_review_count DESC, normalized_city
-        """,
-        [review_fact_path],
+        """
     ).fetchdf()
 
     return city_df, state_df, variant_df
@@ -166,7 +168,7 @@ def main() -> None:
     min_city_reviews = int(config.get("geography", {}).get("min_city_reviews", 1000))
     top_n = int(config.get("geography", {}).get("top_n_cities", 20))
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         city_df, state_df, variant_df = build_city_coverage(
             con,

@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_b.common import (
     TrackBPaths,
     create_snapshot_view,
@@ -187,7 +188,7 @@ def main() -> None:
     business_cfg = config["ranking_groups"]["business"]
     fallback_cfg = config["ranking_groups"]["category_city"]
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         create_snapshot_view(con, config, paths)
         business_df = _run_group_summary(

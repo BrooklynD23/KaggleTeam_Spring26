@@ -16,6 +16,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from src.common.db import connect_duckdb
+
 matplotlib.use("Agg")
 
 logger = logging.getLogger(__name__)
@@ -176,15 +178,15 @@ def load_analyzable_cities(paths: TrackCPaths) -> set[str]:
     stage1_path = paths.tables_dir / "track_c_s1_city_coverage.parquet"
     if not stage1_path.is_file():
         return set()
-    con = duckdb.connect()
+    pq_str = str(stage1_path).replace("\\", "/")
+    con = connect_duckdb()
     try:
         rows = con.execute(
-            """
+            f"""
             SELECT normalized_city
-            FROM read_parquet(?)
+            FROM read_parquet('{pq_str}')
             WHERE COALESCE(is_analyzable, FALSE)
-            """,
-            [str(stage1_path)],
+            """
         ).fetchall()
     finally:
         con.close()
@@ -260,20 +262,28 @@ def load_review_text_sample(
                 "text_char_count",
             ]
         )
-    sql = f"""
-        WITH sampled AS (
-            SELECT
-                r.review_id,
-                r.text AS review_text
-            FROM read_parquet($1) AS r
-            WHERE r.review_id IN (SELECT review_id FROM read_parquet($2))
-              AND r.text IS NOT NULL
-              AND LENGTH(TRIM(r.text)) > 0
-            USING SAMPLE {max(int(sample_size), 1)} ROWS (REPEATABLE ({int(seed)}))
-        )
+    rev_pq = str(review_path).replace("\\", "/")
+    rf_pq = str(review_fact_path).replace("\\", "/")
+    n_sample = max(int(sample_size), 1)
+
+    ids_sql = f"""
+        SELECT review_id
+        FROM read_parquet(?)
+        WHERE text IS NOT NULL AND LENGTH(TRIM(text)) > 0
+        USING SAMPLE reservoir({n_sample} ROWS) REPEATABLE({int(seed)})
+    """
+    try:
+        sampled_ids = con.execute(ids_sql, [rev_pq]).fetchdf()
+    except Exception:
+        sampled_ids = con.execute(
+            ids_sql.replace("read_parquet(?)", f"read_parquet('{rev_pq}')", 1)
+        ).fetchdf()
+    con.register("_sampled_ids", sampled_ids)
+
+    join_sql = """
         SELECT
-            sampled.review_id,
-            sampled.review_text,
+            r.review_id,
+            r.text AS review_text,
             rf.business_id,
             rf.review_stars,
             rf.city,
@@ -284,10 +294,18 @@ def load_review_text_sample(
             rf.review_date,
             rf.text_word_count,
             rf.text_char_count
-        FROM sampled
-        JOIN read_parquet($2) AS rf USING (review_id)
+        FROM read_parquet(?) AS r
+        JOIN _sampled_ids AS s ON r.review_id = s.review_id
+        JOIN read_parquet(?) AS rf ON r.review_id = rf.review_id
     """
-    return con.execute(sql, [str(review_path), str(review_fact_path)]).fetchdf()
+    try:
+        result = con.execute(join_sql, [rev_pq, rf_pq]).fetchdf()
+    except Exception:
+        fallback_sql = join_sql.replace("read_parquet(?)", f"read_parquet('{rev_pq}')", 1)
+        fallback_sql = fallback_sql.replace("read_parquet(?)", f"read_parquet('{rf_pq}')", 1)
+        result = con.execute(fallback_sql).fetchdf()
+    con.unregister("_sampled_ids")
+    return result
 
 
 def drop_raw_text_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -304,11 +322,11 @@ def describe_parquet_columns(
     parquet_path: Path,
 ) -> list[str]:
     """Return parquet column names via DuckDB schema introspection."""
+    pq_str = str(parquet_path).replace("\\", "/")
     return [
         str(row[0])
         for row in con.execute(
-            "DESCRIBE SELECT * FROM read_parquet(?)",
-            [str(parquet_path)],
+            f"DESCRIBE SELECT * FROM read_parquet('{pq_str}')"
         ).fetchall()
     ]
 
@@ -316,7 +334,7 @@ def describe_parquet_columns(
 def scan_track_c_text_leaks(paths: TrackCPaths) -> list[dict[str, str]]:
     """Return a soft list of banned text-column findings across Track C parquet outputs."""
     findings: list[dict[str, str]] = []
-    con = duckdb.connect()
+    con = connect_duckdb()
     try:
         for parquet_path in sorted(paths.tables_dir.glob("track_c_*.parquet")):
             columns = {name.lower() for name in describe_parquet_columns(con, parquet_path)}

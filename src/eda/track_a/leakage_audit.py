@@ -11,6 +11,7 @@ import pandas as pd
 
 from src.common.artifacts import load_candidate_splits
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +65,9 @@ def _schema_checks(
     con: duckdb.DuckDBPyConnection,
     review_fact_path: Path,
 ) -> list[dict[str, Any]]:
+    pq_str = str(review_fact_path).replace("\\", "/")
     schema = con.execute(
-        "DESCRIBE SELECT * FROM read_parquet(?)",
-        [str(review_fact_path)],
+        f"DESCRIBE SELECT * FROM read_parquet('{pq_str}')"
     ).fetchdf()
     columns = set(schema["column_name"].tolist())
     forbidden_present = sorted(columns & FORBIDDEN_COLUMNS)
@@ -184,7 +185,8 @@ def _overlap_checks(
     t1: str,
     t2: str,
 ) -> list[dict[str, Any]]:
-    query = """
+    pq_str = str(review_fact_path).replace("\\", "/")
+    query = f"""
         WITH split_reviews AS (
             SELECT
                 user_id,
@@ -194,7 +196,7 @@ def _overlap_checks(
                     WHEN review_date < CAST(? AS DATE) THEN 'validation'
                     ELSE 'test'
                 END AS split_name
-            FROM read_parquet(?)
+            FROM read_parquet('{pq_str}')
         ),
         split_presence AS (
             SELECT
@@ -213,10 +215,7 @@ def _overlap_checks(
             SUM(CASE WHEN in_train = 1 AND in_validation = 1 AND in_test = 1 THEN 1 ELSE 0 END) AS all_split_pairs
         FROM split_presence
     """
-    row = con.execute(
-        query,
-        [t1, t2, str(review_fact_path)],
-    ).fetchone()
+    row = con.execute(query, [t1, t2]).fetchone()
     overlap_counts = {
         "train_validation_pairs": int(row[0]) if row else 0,
         "train_test_pairs": int(row[1]) if row else 0,
@@ -271,7 +270,7 @@ def run(config: dict[str, Any]) -> pd.DataFrame:
     tables_dir.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         t1, t2, split_source = load_candidate_splits(con, tables_dir, config)
         rows = []

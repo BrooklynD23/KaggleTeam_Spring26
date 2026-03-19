@@ -11,6 +11,7 @@ import duckdb
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_b.common import (
     TEMPORAL_CLAIM_PATTERNS,
     TEXT_ARTIFACT_SUFFIXES,
@@ -49,11 +50,11 @@ def _describe_parquet_columns(
     parquet_path: Path,
 ) -> list[str]:
     """Return parquet column names via DuckDB schema introspection."""
+    pq_str = str(parquet_path).replace("\\", "/")
     return [
         str(row[0])
         for row in con.execute(
-            "DESCRIBE SELECT * FROM read_parquet(?)",
-            [str(parquet_path)],
+            f"DESCRIBE SELECT * FROM read_parquet('{pq_str}')"
         ).fetchall()
     ]
 
@@ -158,15 +159,15 @@ def _check_age_scope(
             )
         ]
 
+    pq_str = str(label_candidates_path).replace("\\", "/")
     row = con.execute(
-        """
+        f"""
         SELECT
             COUNT(*) AS row_count,
             COUNT(DISTINCT review_id) AS unique_review_ids,
             COUNT(*) FILTER (WHERE age_bucket IS NULL) AS null_age_bucket_rows
-        FROM read_parquet(?)
-        """,
-        [str(label_candidates_path)],
+        FROM read_parquet('{pq_str}')
+        """
     ).fetchone()
     if row is None:
         raise RuntimeError("Age-scope validation query returned no rows")
@@ -313,7 +314,7 @@ def main() -> None:
     ensure_output_dirs(paths)
     metadata = load_snapshot_metadata(paths)
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         findings = []
         findings.extend(_check_parquet_schemas(con, paths))

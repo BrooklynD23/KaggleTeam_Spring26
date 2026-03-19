@@ -45,7 +45,7 @@ Track D implements the cold-start EDA pipeline for two separate subtracks:
 4. `popularity_baseline.py`
 5. `user_cold_start.py`
 6. `user_warmup_profile.py`
-7. `evaluation_cohorts.py`
+7. `evaluation_cohorts.py` — D1 and D2 evaluation cohorts; uses bounded construction with `evaluation.entity_cap_per_group` (no spill-heavy DuckDB joins)
 8. `leakage_check.py`
 9. `summary_report.py`
 

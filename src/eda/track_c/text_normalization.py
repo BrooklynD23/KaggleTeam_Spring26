@@ -11,6 +11,7 @@ import duckdb
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_c.common import (
     detect_language,
     ensure_output_dirs,
@@ -115,7 +116,7 @@ def main() -> None:
     sample_size = int(config.get("nlp", {}).get("sample_size", 100_000))
     seed = int(config.get("nlp", {}).get("random_seed", 42))
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         stats_df, lang_df = build_text_outputs(
             con,

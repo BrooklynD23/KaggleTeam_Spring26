@@ -35,22 +35,16 @@ DEPENDENCY_MAP: dict[str, list[str]] = {
     "src/ingest/load_yelp_json.py": [
         "CoWork Planning/yelp_project/docs/intern/track_a_explained.md",
         "CoWork Planning/yelp_project/docs/intern/track_b_explained.md",
-        "CoWork Planning/yelp_project/docs/intern/code/ingest_load_yelp_json.md",
-    ],
-    "src/ingest/validate_json_structure.py": [
-        "CoWork Planning/yelp_project/docs/intern/code/ingest_load_yelp_json.md",
     ],
     # Validation
     "src/validate/schema_checks.py": [
         "CoWork Planning/yelp_project/docs/intern/track_a_explained.md",
         "CoWork Planning/yelp_project/docs/intern/track_b_explained.md",
-        "CoWork Planning/yelp_project/docs/intern/code/validate_schema_checks.md",
     ],
     # Curation
     "src/curate/build_review_fact.py": [
         "CoWork Planning/yelp_project/docs/intern/track_a_explained.md",
         "CoWork Planning/yelp_project/docs/intern/track_b_explained.md",
-        "CoWork Planning/yelp_project/docs/intern/code/curate_build_review_fact.md",
     ],
     # Track A EDA (glob pattern — matches any .py in track_a)
     "src/eda/track_a/*.py": [
@@ -62,6 +56,21 @@ DEPENDENCY_MAP: dict[str, list[str]] = {
         "CoWork Planning/yelp_project/docs/intern/track_b_explained.md",
         "CoWork Planning/yelp_project/docs/intern/workflows/track_b_pipeline.md",
     ],
+    # Track C EDA
+    "src/eda/track_c/*.py": [
+        "CoWork Planning/yelp_project/docs/intern/workflows/track_c_pipeline.md",
+        "CoWork Planning/yelp_project/docs/intern/code/track_c_modules.md",
+    ],
+    # Track D EDA
+    "src/eda/track_d/*.py": [
+        "CoWork Planning/yelp_project/docs/intern/workflows/track_d_pipeline.md",
+        "CoWork Planning/yelp_project/docs/intern/code/track_d_modules.md",
+    ],
+    # Track E EDA
+    "src/eda/track_e/*.py": [
+        "CoWork Planning/yelp_project/docs/intern/workflows/track_e_pipeline.md",
+        "CoWork Planning/yelp_project/docs/intern/code/track_e_modules.md",
+    ],
     # Common
     "src/common/config.py": [
         "CoWork Planning/yelp_project/docs/intern/track_a_explained.md",
@@ -71,34 +80,41 @@ DEPENDENCY_MAP: dict[str, list[str]] = {
     "configs/base.yaml": [
         "CoWork Planning/yelp_project/docs/intern/track_a_explained.md",
         "CoWork Planning/yelp_project/docs/intern/track_b_explained.md",
-        "CoWork Planning/yelp_project/docs/intern/config/base_yaml.md",
     ],
     "configs/track_a.yaml": [
         "CoWork Planning/yelp_project/docs/intern/track_a_explained.md",
-        "CoWork Planning/yelp_project/docs/intern/config/track_a_yaml.md",
     ],
     "configs/track_b.yaml": [
         "CoWork Planning/yelp_project/docs/intern/track_b_explained.md",
-        "CoWork Planning/yelp_project/docs/intern/config/track_b_yaml.md",
+    ],
+    "configs/track_c.yaml": [
+        "CoWork Planning/yelp_project/docs/intern/config/track_c_yaml.md",
+        "CoWork Planning/yelp_project/docs/intern/workflows/track_c_pipeline.md",
+    ],
+    "configs/track_d.yaml": [
+        "CoWork Planning/yelp_project/docs/intern/config/track_d_yaml.md",
+        "CoWork Planning/yelp_project/docs/intern/workflows/track_d_pipeline.md",
+    ],
+    "configs/track_e.yaml": [
+        "CoWork Planning/yelp_project/docs/intern/config/track_e_yaml.md",
+        "CoWork Planning/yelp_project/docs/intern/workflows/track_e_pipeline.md",
     ],
     # Run scripts
     "run_pipeline.sh": [
         "CoWork Planning/yelp_project/docs/intern/track_a_explained.md",
         "CoWork Planning/yelp_project/docs/intern/track_b_explained.md",
-        "CoWork Planning/yelp_project/docs/intern/workflows/running_the_pipeline.md",
     ],
     "run_pipeline.ps1": [
         "CoWork Planning/yelp_project/docs/intern/track_a_explained.md",
         "CoWork Planning/yelp_project/docs/intern/track_b_explained.md",
-        "CoWork Planning/yelp_project/docs/intern/workflows/running_the_pipeline.md",
     ],
     "scripts/run_pipeline.py": [
         "CoWork Planning/yelp_project/docs/intern/track_a_explained.md",
         "CoWork Planning/yelp_project/docs/intern/track_b_explained.md",
-        "CoWork Planning/yelp_project/docs/intern/workflows/running_the_pipeline.md",
     ],
     "scripts/pipeline_dispatcher.py": [
-        "CoWork Planning/yelp_project/docs/intern/workflows/running_the_pipeline.md",
+        "CoWork Planning/yelp_project/docs/intern/track_a_explained.md",
+        "CoWork Planning/yelp_project/docs/intern/track_b_explained.md",
     ],
     # Planning docs — changes here may require decision records
     "CoWork Planning/yelp_project/track_a/CLAUDE.md": [

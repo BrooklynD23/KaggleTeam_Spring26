@@ -60,8 +60,9 @@ Why this matters: a baseline should be realistic, not overfit or unreasonably hu
 
 - `recall_k`
 - `ndcg_k`
+- `entity_cap_per_group` (default: 10,000) — caps the number of entities processed per group in Stage 7 so candidate construction stays tractable and reproducible on the Yelp dataset. Prevents unbounded candidate pools that would cause memory spills.
 
-Why this matters: these are the report-card cutoffs for future recommendation experiments.
+Why this matters: these are the report-card cutoffs for future recommendation experiments. The entity cap keeps Stage 7 bounded and deterministic.
 
 ### `leakage`
 

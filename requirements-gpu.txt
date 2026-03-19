@@ -1,0 +1,5 @@
+# Optional GPU acceleration (cudf-polars). Requires NVIDIA GPU + CUDA 12 + WSL2/Linux.
+# Install with: pip install -r requirements-gpu.txt
+# See docs/gpu_acceleration.md for setup and prerequisites.
+cudf-cu12
+cudf-polars-cu12

@@ -9,6 +9,7 @@ import duckdb
 
 from src.common.artifacts import load_candidate_splits
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,9 @@ def _artifact_status(path: Path) -> str:
 def _load_one_row(con: duckdb.DuckDBPyConnection, path: Path, query: str) -> tuple[Any, ...] | None:
     if not path.is_file():
         return None
-    return con.execute(query, [str(path)]).fetchone()
+    pq_str = str(path).replace("\\", "/")
+    inlined = query.replace("read_parquet(?)", f"read_parquet('{pq_str}')")
+    return con.execute(inlined).fetchone()
 
 
 def _build_markdown(config: dict[str, Any]) -> str:
@@ -49,7 +52,7 @@ def _build_markdown(config: dict[str, Any]) -> str:
         "stage_7_availability": tables_dir / "track_a_s7_feature_availability.parquet",
     }
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         stage1 = _load_one_row(
             con,

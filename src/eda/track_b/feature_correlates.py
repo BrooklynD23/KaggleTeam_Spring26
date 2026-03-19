@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_b.common import (
     TrackBPaths,
     create_snapshot_view,
@@ -323,7 +324,7 @@ def main() -> None:
             "Inspect 'track_b_s3_recommended_age_buckets.parquet' for details."
         )
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         create_snapshot_view(con, config, paths)
         if recommended_buckets is not None:

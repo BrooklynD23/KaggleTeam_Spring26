@@ -10,7 +10,9 @@ from typing import Any
 import duckdb
 import pandas as pd
 
+from src.common.db import connect_duckdb
 from src.common.helpers import extract_price_range, parse_jsonish, primary_category  # noqa: F401
+from src.common.parquet_io import read_parquet_pandas
 
 logger = logging.getLogger(__name__)
 
@@ -102,12 +104,21 @@ def load_parquet(
     sql: str | None = None,
     params: list[Any] | None = None,
 ) -> pd.DataFrame:
-    """Read a parquet-backed query into a DataFrame."""
-    con = duckdb.connect()
+    """Read a parquet-backed query into a DataFrame.
+
+    When *sql* is ``None`` the file is read via Polars (no DuckDB).
+    When *sql* is provided, DuckDB is used for the custom query.
+    """
+    if sql is None:
+        return read_parquet_pandas(path)
+
+    pq_str = str(path).replace("\\", "/")
+    con = connect_duckdb()
     try:
-        if sql is None:
-            return con.execute("SELECT * FROM read_parquet(?)", [str(path)]).fetchdf()
-        return con.execute(sql, params or []).fetchdf()
+        sql_inlined = sql.replace("read_parquet(?)", f"read_parquet('{pq_str}')")
+        param_list = list(params or [])
+        remaining = param_list[1:] if param_list and "read_parquet(?)" in sql else param_list
+        return con.execute(sql_inlined, remaining).fetchdf() if remaining else con.execute(sql_inlined).fetchdf()
     finally:
         con.close()
 

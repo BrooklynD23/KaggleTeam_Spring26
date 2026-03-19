@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_c.common import (
     ensure_output_dirs,
     load_analyzable_cities,
@@ -32,8 +33,9 @@ def build_monthly_table(
     min_reviews_per_bin: int,
 ) -> pd.DataFrame:
     """Aggregate monthly review volume by city."""
+    pq = str(review_fact_path).replace("\\", "/")
     df = con.execute(
-        """
+        f"""
         SELECT
             city,
             LOWER(TRIM(city)) AS normalized_city,
@@ -41,11 +43,10 @@ def build_monthly_table(
             review_year,
             review_month,
             COUNT(*) AS review_count
-        FROM read_parquet($1)
+        FROM read_parquet('{pq}')
         GROUP BY city, normalized_city, state, review_year, review_month
         ORDER BY review_year, review_month, review_count DESC
-        """,
-        [review_fact_path],
+        """
     ).fetchdf()
     if df.empty:
         return pd.DataFrame(
@@ -154,7 +155,7 @@ def main() -> None:
     ensure_output_dirs(paths)
     min_reviews_per_bin = int(config.get("temporal", {}).get("min_reviews_per_bin", 30))
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         monthly_df = build_monthly_table(
             con,

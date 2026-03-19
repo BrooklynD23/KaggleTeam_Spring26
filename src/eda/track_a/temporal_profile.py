@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 
 matplotlib.use("Agg")
 
@@ -23,18 +24,19 @@ def _resolve(config: dict[str, Any], key: str) -> Path:
 
 def run_star_distribution(con: duckdb.DuckDBPyConnection, curated: Path, tables: Path) -> pd.DataFrame:
     """Star counts grouped by year, month, and star rating."""
-    sql = """
+    pq = str(curated / "review_fact.parquet").replace("\\", "/")
+    sql = f"""
         SELECT
             review_year,
             review_month,
             review_stars,
             COUNT(*)        AS review_count,
             AVG(review_stars) AS mean_stars
-        FROM read_parquet($1)
+        FROM read_parquet('{pq}')
         GROUP BY review_year, review_month, review_stars
         ORDER BY review_year, review_month, review_stars
     """
-    df = con.execute(sql, [str(curated / "review_fact.parquet")]).fetchdf()
+    df = con.execute(sql).fetchdf()
     out = tables / "track_a_s1_stars_by_year_month.parquet"
     df.to_parquet(out, index=False)
     logger.info("Wrote %s (%d rows)", out, len(df))
@@ -43,17 +45,18 @@ def run_star_distribution(con: duckdb.DuckDBPyConnection, curated: Path, tables:
 
 def run_monthly_volume(con: duckdb.DuckDBPyConnection, curated: Path, tables: Path) -> pd.DataFrame:
     """Monthly review volume with count, mean, and stddev."""
-    sql = """
+    pq = str(curated / "review_fact.parquet").replace("\\", "/")
+    sql = f"""
         SELECT
             DATE_TRUNC('month', review_date) AS period,
             COUNT(*)                         AS review_count,
             AVG(review_stars)                AS mean_stars,
             STDDEV(review_stars)             AS std_stars
-        FROM read_parquet($1)
+        FROM read_parquet('{pq}')
         GROUP BY period
         ORDER BY period
     """
-    df = con.execute(sql, [str(curated / "review_fact.parquet")]).fetchdf()
+    df = con.execute(sql).fetchdf()
     out = tables / "track_a_s1_review_volume_by_period.parquet"
     df.to_parquet(out, index=False)
     logger.info("Wrote %s (%d rows)", out, len(df))
@@ -111,7 +114,8 @@ def main() -> None:
     tables.mkdir(parents=True, exist_ok=True)
     figures.mkdir(parents=True, exist_ok=True)
 
-    con = duckdb.connect(str(_resolve(config, "db_path")), read_only=True)
+    db_path = _resolve(config, "db_path")
+    con = connect_duckdb(config, db_path=db_path, read_only=True)
     try:
         stars_df = run_star_distribution(con, curated, tables)
         volume_df = run_monthly_volume(con, curated, tables)

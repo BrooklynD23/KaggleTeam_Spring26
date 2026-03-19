@@ -200,15 +200,16 @@ python -m src.eda.track_d.user_warmup_profile --config configs/track_d.yaml
 python -m src.eda.track_d.evaluation_cohorts --config configs/track_d.yaml
 ```
 
-- Input: Stage 2, Stage 4, Stage 5, Stage 6 outputs, temporal split definitions from Track A
+- Input: Stage 2, Stage 4, Stage 5, Stage 6 outputs, temporal split definitions from Track A, `data/curated/review_fact.parquet`, `configs/track_d.yaml` (`evaluation.entity_cap_per_group`, `baseline.candidate_set_max_size`)
 - Outputs:
   - `outputs/tables/track_d_s7_eval_cohorts.parquet`
   - `outputs/tables/track_d_s7_eval_cohort_summary.parquet`
+  - `outputs/tables/track_d_s7_eval_candidate_members.parquet`
 - Logic:
-  - **D1:** identify new businesses that were cold as of recommendation time and received a relevant user interaction in the test period.
-  - **D2:** identify new or near-new users and measure whether their next observed interaction appears in the ranked candidate set.
-
-  Report D1 and D2 separately.
+  - **D1:** identify new businesses that were cold as of recommendation time and received a relevant user interaction in the test period. Candidate sets are built from already-materialized Track D artifacts (cohorts, baselines) using a bounded, deterministic construction path. No spill-heavy DuckDB joins.
+  - **D2:** identify new or near-new users (primary cold cohort) and measure whether their next observed interaction appears in the ranked candidate set. Uses the same bounded construction approach as D1.
+  - **Bounded processing:** `evaluation.entity_cap_per_group` (default 10,000) caps entities per group so Stage 7 stays reproducible and tractable on the Yelp dataset instead of materializing unbounded candidate pools. Candidate sets remain deterministic and are written to the same output files.
+  - Report D1 and D2 separately.
 
 **Stage 8 — Leakage Check**
 

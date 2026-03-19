@@ -10,6 +10,7 @@ import duckdb
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_d.common import TrackDPaths, ensure_output_dirs, list_track_d_artifacts, read_text, resolve_paths
 
 logger = logging.getLogger(__name__)
@@ -38,9 +39,10 @@ def _record(finding_name: str, category: str, status: str, detail: str, artifact
 
 
 def _describe_parquet_columns(con: duckdb.DuckDBPyConnection, parquet_path: Path) -> list[str]:
+    pq_str = str(parquet_path).replace("\\", "/")
     return [
         str(row[0]).lower()
-        for row in con.execute("DESCRIBE SELECT * FROM read_parquet(?)", [str(parquet_path)]).fetchall()
+        for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{pq_str}')").fetchall()
     ]
 
 
@@ -132,13 +134,13 @@ def _check_candidate_contamination(con: duckdb.DuckDBPyConnection, paths: TrackD
             )
         ]
 
+    pq_str = str(members_path).replace("\\", "/")
     seen_count = con.execute(
-        """
+        f"""
         SELECT COUNT(*)
-        FROM read_parquet(?)
+        FROM read_parquet('{pq_str}')
         WHERE COALESCE(was_seen_previously, FALSE)
-        """,
-        [str(members_path)],
+        """
     ).fetchone()[0]
     return [
         _record(
@@ -175,7 +177,7 @@ def run(config: dict[str, object]) -> pd.DataFrame:
     banned_fields = list(config.get("leakage", {}).get("banned_fields", []))  # type: ignore[union-attr]
 
     findings = _check_required_artifacts(paths)
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         findings.extend(_check_parquet_schemas(con, paths))
         findings.extend(_check_candidate_contamination(con, paths))

@@ -35,9 +35,9 @@ def load_candidate_splits(
     """
     candidate_path = tables_dir / "track_a_s5_candidate_splits.parquet"
     if candidate_path.is_file():
+        pq_str = str(candidate_path).replace("\\", "/")
         df = con.execute(
-            "SELECT * FROM read_parquet(?)",
-            [str(candidate_path)],
+            f"SELECT * FROM read_parquet('{pq_str}')"
         ).fetchdf()
 
         # Normalise legacy column names: t1_date -> t1, t2_date -> t2

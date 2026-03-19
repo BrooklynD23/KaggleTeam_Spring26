@@ -1241,6 +1241,19 @@ def verify_stage_outputs(repo_root: Path, stage: StageDefinition) -> bool:
     return stage_outputs_exist(repo_root, stage)
 
 
+def _format_elapsed(seconds: float) -> str:
+    """Format elapsed seconds as a human-friendly string."""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes = int(seconds // 60)
+    secs = seconds % 60
+    if minutes < 60:
+        return f"{minutes}m {secs:.0f}s"
+    hours = minutes // 60
+    mins = minutes % 60
+    return f"{hours}h {mins}m {secs:.0f}s"
+
+
 def execute_pipeline(
     repo_root: Path,
     state: dict[str, Any],
@@ -1250,9 +1263,14 @@ def execute_pipeline(
     interpreter: Path,
 ) -> int:
     """Execute the selected pipeline from the requested stage onward."""
+    import time as _time
+
     stages = PIPELINES[approach]
     if start_index < 0 or start_index >= len(stages):
         raise DispatcherError(f"Invalid start index for {approach}: {start_index}")
+
+    stage_timings: list[tuple[str, float, str]] = []
+    pipeline_t0 = _time.monotonic()
 
     for stage in stages[start_index:]:
         log_path = stage_log_path(repo_root, approach, stage.stage_id)
@@ -1271,7 +1289,9 @@ def execute_pipeline(
 
         command = build_stage_command(repo_root, interpreter, stage)
         print(f"\n==> [{approach}] running stage: {stage.stage_id}")
+        stage_t0 = _time.monotonic()
         exit_code = stream_stage_output(command, repo_root, log_path)
+        stage_elapsed = _time.monotonic() - stage_t0
 
         if exit_code == 0 and stage.stage_id == "schema_checks":
             write_schema_success_marker(
@@ -1282,6 +1302,13 @@ def execute_pipeline(
 
         outputs_verified = exit_code == 0 and verify_stage_outputs(repo_root, stage)
         finished_at = utc_now_iso()
+        status_label = "completed" if (exit_code == 0 and outputs_verified) else "failed"
+        stage_timings.append((stage.stage_id, stage_elapsed, status_label))
+
+        print(
+            f"    [{approach}/{stage.stage_id}] {status_label} in "
+            f"{_format_elapsed(stage_elapsed)}"
+        )
 
         if exit_code != 0 or not outputs_verified:
             if exit_code == 0 and not outputs_verified:
@@ -1308,6 +1335,7 @@ def execute_pipeline(
                 exit_code=exit_code,
                 outputs_verified=False,
             )
+            _print_timing_summary(approach, stage_timings, pipeline_t0, repo_root)
             return exit_code
 
         update_stage_state(
@@ -1324,7 +1352,75 @@ def execute_pipeline(
             outputs_verified=True,
         )
 
+    _print_timing_summary(approach, stage_timings, pipeline_t0, repo_root)
     return 0
+
+
+def _print_timing_summary(
+    approach: str,
+    timings: list[tuple[str, float, str]],
+    pipeline_t0: float,
+    repo_root: Path | None = None,
+) -> None:
+    """Print a ranked timing summary and disk usage after a pipeline run."""
+    import time as _time
+
+    if not timings:
+        return
+
+    total_elapsed = _time.monotonic() - pipeline_t0
+    sorted_by_time = sorted(timings, key=lambda t: t[1], reverse=True)
+
+    print(f"\n{'=' * 60}")
+    print(f"  Timing summary for {approach}")
+    print(f"  Total wall-clock: {_format_elapsed(total_elapsed)}")
+    print(f"{'=' * 60}")
+    print(f"  {'Stage':<30} {'Time':>10}  {'Status'}")
+    print(f"  {'-' * 30} {'-' * 10}  {'-' * 9}")
+    for stage_id, elapsed, status in sorted_by_time:
+        pct = (elapsed / total_elapsed * 100) if total_elapsed > 0 else 0
+        print(
+            f"  {stage_id:<30} {_format_elapsed(elapsed):>10}  "
+            f"{status}  ({pct:.0f}%)"
+        )
+    print(f"{'=' * 60}")
+
+    if repo_root is not None:
+        _print_disk_usage_summary(repo_root)
+
+
+def _print_disk_usage_summary(repo_root: Path) -> None:
+    """Print disk usage by track for figures, tables, and curated data."""
+    from src.common.disk_usage import (
+        compute_outputs_disk_usage,
+        format_bytes,
+        total_outputs_bytes,
+    )
+
+    usage = compute_outputs_disk_usage(repo_root)
+    total = total_outputs_bytes(usage)
+    if total == 0:
+        return
+
+    print(f"\n  {'Disk usage (outputs):':<30}")
+    print(f"  {'-' * 50}")
+    for approach, u in usage.items():
+        if u.total_bytes == 0:
+            continue
+        parts = []
+        if u.figures_bytes:
+            parts.append(f"figures {format_bytes(u.figures_bytes)}")
+        if u.tables_bytes:
+            parts.append(f"tables {format_bytes(u.tables_bytes)}")
+        if u.curated_bytes:
+            parts.append(f"curated {format_bytes(u.curated_bytes)}")
+        if u.logs_bytes:
+            parts.append(f"logs {format_bytes(u.logs_bytes)}")
+        label = approach.replace("_", " ").title()
+        print(f"  {label:<12} {format_bytes(u.total_bytes):>10}  ({', '.join(parts)})")
+    print(f"  {'-' * 50}")
+    print(f"  {'Total':<12} {format_bytes(total):>10}")
+    print(f"{'=' * 60}")
 
 
 def maybe_run_shared_prerequisites(
@@ -1457,6 +1553,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     )
     if not decision.should_run or decision.start_index is None:
         print("No stages were run.")
+        _print_disk_usage_summary(repo_root)
         return 0
 
     return execute_pipeline(

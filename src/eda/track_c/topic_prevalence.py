@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_c.common import (
     ensure_output_dirs,
     load_analyzable_cities,
@@ -215,7 +216,7 @@ def main() -> None:
     seed = int(config.get("nlp", {}).get("random_seed", 42))
     keywords = [str(keyword) for keyword in config.get("nlp", {}).get("keyword_list", [])]
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         keyword_df, cluster_df = build_keyword_trends(
             con,

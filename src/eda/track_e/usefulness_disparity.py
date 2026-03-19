@@ -196,10 +196,10 @@ def run(config: dict[str, Any]) -> None:
     # 1. Load review_fact
     logger.info("Loading review_fact from %s", paths.review_fact_path)
     if paths.review_fact_path.is_file():
+        pq_str = str(paths.review_fact_path).replace("\\", "/")
         reviews = load_parquet(
             paths.review_fact_path,
-            sql="SELECT business_id, user_id, useful FROM read_parquet(?)",
-            params=[str(paths.review_fact_path)],
+            sql=f"SELECT business_id, user_id, useful FROM read_parquet('{pq_str}')",
         )
     else:
         logger.warning("review_fact.parquet not found — using empty frame.")

@@ -106,7 +106,7 @@ def build_age_bucket_case(
         )
 
     lines = ["CASE"]
-    for threshold, label in zip(thresholds, labels, strict=True):
+    for threshold, label in zip(thresholds, labels):
         lines.append(f"    WHEN {column_name} <= {threshold} THEN '{label}'")
     lines.append(f"    ELSE '{labels[-1]}'")
     lines.append("END")
@@ -132,6 +132,7 @@ def create_snapshot_view(
         labels=age_cfg["labels"],
     )
     snapshot_date = metadata["snapshot_reference_date"]
+    pq_path = str(paths.review_fact_track_b_path).replace("\\", "/")
 
     sql = f"""
         CREATE OR REPLACE TEMP VIEW {view_name} AS
@@ -169,10 +170,11 @@ def create_snapshot_view(
                 fans,
                 elite,
                 DATEDIFF('day', review_date, DATE '{snapshot_date}') AS review_age_days
-            FROM read_parquet(?)
+            FROM read_parquet('{pq_path}')
+            WHERE useful >= 0
         ) AS base
     """
-    con.execute(sql, [str(paths.review_fact_track_b_path)])
+    con.execute(sql)
     logger.info(
         "Created temp view %s from %s",
         view_name,

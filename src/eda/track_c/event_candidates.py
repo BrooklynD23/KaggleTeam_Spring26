@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_c.common import (
     ensure_output_dirs,
     load_snapshot_metadata,
@@ -34,15 +35,17 @@ def build_business_lifecycle(
     inactivity_days: int,
 ) -> pd.DataFrame:
     """Build business lifecycle and closure-candidate summaries."""
+    pq_review = str(review_fact_path).replace("\\", "/")
+    pq_business = str(business_path).replace("\\", "/")
     lifecycle = con.execute(
-        """
+        f"""
         WITH review_lifecycle AS (
             SELECT
                 business_id,
                 MIN(review_date) AS first_review_date,
                 MAX(review_date) AS last_review_date,
                 COUNT(*) AS review_count
-            FROM read_parquet($1)
+            FROM read_parquet('{pq_review}')
             GROUP BY business_id
         )
         SELECT
@@ -55,9 +58,8 @@ def build_business_lifecycle(
             rl.last_review_date::VARCHAR AS last_review_date,
             rl.review_count
         FROM review_lifecycle rl
-        JOIN read_parquet($2) b USING (business_id)
-        """,
-        [review_fact_path, business_path],
+        JOIN read_parquet('{pq_business}') b USING (business_id)
+        """
     ).fetchdf()
     if lifecycle.empty:
         return pd.DataFrame(
@@ -180,7 +182,7 @@ def main() -> None:
         config.get("events", {}).get("inactivity_close_proxy_days", 180)
     )
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         lifecycle_df = build_business_lifecycle(
             con,

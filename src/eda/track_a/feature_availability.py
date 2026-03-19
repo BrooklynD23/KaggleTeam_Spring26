@@ -12,6 +12,7 @@ import pandas as pd
 
 from src.common.artifacts import load_candidate_splits
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 
 matplotlib.use("Agg")
 
@@ -178,17 +179,18 @@ def run(config: dict[str, Any]) -> pd.DataFrame:
     tables_dir.mkdir(parents=True, exist_ok=True)
     figures_dir.mkdir(parents=True, exist_ok=True)
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         t1, t2, _ = load_candidate_splits(con, tables_dir, config)
+        pq_path = str(review_fact_path).replace("\\", "/")
         con.execute(
-            """
+            f"""
             CREATE OR REPLACE TEMP VIEW review_base AS
             SELECT
                 review_id,
                 CASE
-                    WHEN review_date < CAST(? AS DATE) THEN 'train'
-                    WHEN review_date < CAST(? AS DATE) THEN 'validation'
+                    WHEN review_date < CAST('{t1}' AS DATE) THEN 'train'
+                    WHEN review_date < CAST('{t2}' AS DATE) THEN 'validation'
                     ELSE 'test'
                 END AS split_name,
                 text_char_count,
@@ -199,9 +201,8 @@ def run(config: dict[str, Any]) -> pd.DataFrame:
                 categories,
                 latitude,
                 longitude
-            FROM read_parquet(?)
+            FROM read_parquet('{pq_path}')
             """,
-            [t1, t2, str(review_fact_path)],
         )
 
         rows: list[dict[str, Any]] = []

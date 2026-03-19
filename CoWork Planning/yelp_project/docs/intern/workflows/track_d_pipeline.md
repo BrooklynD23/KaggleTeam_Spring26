@@ -67,6 +67,8 @@ Examples include:
 
 This stage creates candidate sets and marks which business became the real next interaction.
 
+It uses a bounded, deterministic construction path: candidate sets are built from already-materialized Track D artifacts (cohorts, baselines, warm-up profiles) rather than spill-heavy DuckDB joins. The config option `evaluation.entity_cap_per_group` (default 10,000) caps entities per group so Stage 7 stays tractable on the Yelp dataset. D2 evaluates the primary cold cohort only.
+
 It also removes businesses the user already saw before the evaluation point. That avoids recommending something the user already knows.
 
 ### Step 8: Run the leakage hard gate
@@ -108,6 +110,14 @@ A: Because recommendation must use only the information available at the recomme
 
 **Q: Why can zero-history rows have many `NULL` values?**
 A: Because that is the honest state of the data. If the user or business has no prior interactions, there is no interaction summary to compute.
+
+## Track D and Track A: No Impact on Track A
+
+**The Track D Stage 7 fix does not change the Track A process in any way.**
+
+- **Dependency direction:** Track D → Track A. Track D *reads* Track A Stage 5 split artifact (`track_a_s5_candidate_splits.parquet`) for temporal boundaries. Track A does not read any Track D outputs.
+- **Shared data:** Both tracks read `data/curated/review_fact.parquet`. Track A writes only `track_a_*` artifacts; Track D writes only `track_d_*` artifacts.
+- **Conclusion:** You can run Track A exactly as before. Track D changes (bounded Stage 7 construction, `entity_cap_per_group`) affect only Track D outputs. Track A’s process, outputs, and constraints are unchanged.
 
 ## What Could Go Wrong
 

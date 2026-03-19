@@ -11,9 +11,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-import duckdb
-
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.ingest.validate_json_structure import validate_first_n_lines
 
 logger = logging.getLogger(__name__)
@@ -204,13 +203,7 @@ def run(config: dict[str, Any]) -> None:
 
     # Step 3: Load into DuckDB
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    con = duckdb.connect(str(db_path))
-
-    memory_limit = ingest_cfg.get("memory_limit_gb", 4)
-    threads = ingest_cfg.get("threads", 4)
-    con.execute(f"SET memory_limit = '{memory_limit}GB'")
-    con.execute(f"SET threads = {threads}")
-    logger.info("DuckDB memory_limit=%dGB, threads=%d", memory_limit, threads)
+    con = connect_duckdb(config, db_path=db_path)
 
     total_t0 = time.perf_counter()
     for ent in entities_cfg:

@@ -1,17 +1,17 @@
 # KaggleTeam Spring 2026
 
-Yelp Open Dataset semester project for the CPP DS and AI Spring 2026 team. The repository combines planning documents, a shared ingestion and curation pipeline, and implemented EDA workflows for Track A and Track B.
+Yelp Open Dataset semester project for the CPP DS and AI Spring 2026 team. The repository combines planning documents, a shared ingestion and curation pipeline, and implemented EDA workflows for Tracks A, B, C, D, and E.
 
 ## Repository Status
 
-Last documentation refresh: 2026-03-11.
+Last documentation refresh: 2026-03-19.
 
 Current repo state:
 
 - Shared ingestion, schema validation, curated table building, and orchestration code are implemented.
-- Track A and Track B EDA pipelines are implemented in `src/eda/track_a/` and `src/eda/track_b/`.
-- Tracks C, D, and E are defined in planning documents but do not yet have implementation code under `src/eda/`.
-- `data/raw/`, `data/curated/`, and `outputs/` are present but currently empty in the repo.
+- Track A, Track B, Track C, Track D, and Track E EDA pipelines are implemented in `src/eda/track_a/`, `src/eda/track_b/`, `src/eda/track_c/`, `src/eda/track_d/`, and `src/eda/track_e/`.
+- Track D Stage 7 (evaluation cohorts) uses bounded, deterministic construction with `evaluation.entity_cap_per_group` to stay tractable on the Yelp dataset.
+- `data/raw/`, `data/curated/`, and `outputs/` are present (curated and outputs may be populated after pipeline runs).
 - Tests exist for key contract and regression checks, especially around leakage rules and Track B feasibility logic.
 
 ## Project Structure
@@ -34,7 +34,11 @@ Current repo state:
 |  |- curate/                  Shared curated table construction
 |  |- eda/track_a/             Implemented Track A EDA stages
 |  |- eda/track_b/             Implemented Track B EDA stages
+|  |- eda/track_c/             Implemented Track C EDA stages
+|  |- eda/track_d/             Implemented Track D cold-start EDA stages
+|  |- eda/track_e/             Implemented Track E bias/disparity EDA stages
 |- tests/                      Regression and contract tests
+|- notebooks/                  Jupyter EDA on stratified sample (see Notebook EDA below)
 |- CoWork Planning/
 |  |- Dataset(Raw)/            Local raw archives and reference assets
 |  |- yelp_project/            PRD, implementation plans, and per-track planning docs
@@ -73,9 +77,9 @@ The table below reflects the state of the repo against the planning documents cu
 | Shared ingestion and curation | Yes | Implemented | Not materialized in repo | `src/ingest/`, `src/validate/`, `src/curate/`, dispatcher, configs |
 | Track A: Future Star Rating Prediction | Yes | Implemented | Not materialized in repo | 8 EDA stage modules present; summary/report path defined |
 | Track B: Snapshot Usefulness Ranking | Yes | Implemented | Not materialized in repo | 8 EDA stage modules present; feasibility and leakage checks covered by tests |
-| Track C: Sentiment and Topic Drift | Yes | Not started in code | Not materialized | Planning docs only |
-| Track D: Cold-Start Recommender | Yes | Not started in code | Not materialized | Planning docs only |
-| Track E: Bias and Disparity | Yes | Not started in code | Not materialized | Planning docs only |
+| Track C: Sentiment and Topic Drift | Yes | Implemented | Materialized when run | EDA stages in `src/eda/track_c/` |
+| Track D: Cold-Start Recommender | Yes | Implemented | Materialized when run | 9 EDA stages; Stage 7 uses bounded construction with `entity_cap_per_group` |
+| Track E: Bias and Disparity | Yes | Implemented | Materialized when run | 9 EDA stages in `src/eda/track_e/` |
 
 ## Track Folder Check
 
@@ -89,12 +93,13 @@ Per-track folders already exist in the planning workspace:
 
 Those folders now serve as the documentation homes for each track and include a track README plus the existing pipeline spec, `AGENTS.md`, and `CLAUDE.md` files.
 
-Implementation folders under `src/eda/` currently exist only for:
+Implementation folders under `src/eda/` exist for:
 
 - `track_a`
 - `track_b`
-
-Implementation folders for `track_c`, `track_d`, and `track_e` have not been created yet.
+- `track_c`
+- `track_d`
+- `track_e`
 
 ## Track Index
 
@@ -133,6 +138,13 @@ Current intended deliverables by layer:
 - Stage figures in `outputs/figures/track_b_*`
 - Leakage and scope validation log in `outputs/logs/track_b_*`
 - Final EDA summary at `outputs/tables/track_b_s8_eda_summary.md`
+
+### Track D Deliverables
+
+- Stage outputs in `outputs/tables/track_d_*` (including `track_d_s7_eval_cohorts.parquet`, `track_d_s7_eval_cohort_summary.parquet`, `track_d_s7_eval_candidate_members.parquet`)
+- Stage figures in `outputs/figures/track_d_*`
+- Leakage check log in `outputs/logs/track_d_s8_leakage_check.log`
+- Final EDA summary at `outputs/tables/track_d_s9_eda_summary.md`
 
 ### Planning Deliverables
 
@@ -177,6 +189,16 @@ python scripts/pipeline_dispatcher.py --approach shared
 python scripts/pipeline_dispatcher.py --approach track_a --from-stage split_selection
 ```
 
+### Notebook EDA
+
+Jupyter notebooks run EDA on a stratified sample (~20K reviews) for quick iteration and peer review:
+
+1. Run shared pipeline, then `python -m src.curate.build_sample --config configs/base.yaml`
+2. Run notebooks (Track A first; Track D depends on it)
+3. Commit executed notebooks and `data/sample/` — peers can review on light laptops without re-running
+
+See [notebooks/README.md](notebooks/README.md) for details.
+
 ### Cross-Platform Runtime Notes
 
 - `scripts/run_pipeline.py` is the canonical launcher for both WSL/Linux and native Windows.
@@ -210,8 +232,9 @@ Recommended execution order:
 
 1. Run the shared pipeline.
 2. Validate that curated artifacts are written to `data/curated/`.
-3. Run Track A and or Track B.
-4. Review outputs under `outputs/tables/`, `outputs/figures/`, and `outputs/logs/`.
+3. Run Track A (required before Track D, which uses Track A Stage 5 splits).
+4. Run Track B and/or Track D.
+5. Review outputs under `outputs/tables/`, `outputs/figures/`, and `outputs/logs/`.
 
 ## Near-Term Plan
 
@@ -220,7 +243,7 @@ Recommended next milestones based on the current repo state:
 1. Materialize the shared curated layer from the local Yelp archive.
 2. Run Track A and Track B end to end and check artifact completeness.
 3. Sync any remaining planning documents to the latest resolution memo for Track A and Track B.
-4. Decide whether Track C, D, and E move from planning into `src/eda/` implementation this term.
+4. Sync any remaining planning documents to the latest implementation state for Tracks C, D, and E.
 
 ## Core Planning Documents
 

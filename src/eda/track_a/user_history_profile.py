@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 
 matplotlib.use("Agg")
 
@@ -26,6 +27,11 @@ def _resolve(config: dict[str, Any], key: str) -> Path:
 # User history
 # ---------------------------------------------------------------------------
 
+_LOAD_RF_SQL = """
+CREATE OR REPLACE TEMP TABLE rf_cache AS
+SELECT * FROM read_parquet('{path}')
+"""
+
 _USER_DAY_STATS_SQL = """
 CREATE OR REPLACE TEMP TABLE user_day_stats AS
 SELECT
@@ -34,7 +40,7 @@ SELECT
     COUNT(*)                     AS reviews_on_day,
     SUM(review_stars)            AS stars_sum_on_day,
     SUM(review_stars * review_stars) AS stars_sq_sum_on_day
-FROM read_parquet($1)
+FROM rf_cache
 GROUP BY user_id, review_date
 """
 
@@ -70,7 +76,7 @@ SELECT
               / (udh.cumul_reviews - 1)
          )
          ELSE NULL END               AS user_prior_std_stars
-FROM read_parquet($1) rf
+FROM rf_cache rf
 LEFT JOIN user_day_history udh
   ON rf.user_id = udh.user_id
   AND rf.review_date = udh.review_date
@@ -88,7 +94,7 @@ SELECT
     COUNT(*)                     AS reviews_on_day,
     SUM(review_stars)            AS stars_sum_on_day,
     SUM(review_stars * review_stars) AS stars_sq_sum_on_day
-FROM read_parquet($1)
+FROM rf_cache
 GROUP BY business_id, review_date
 """
 
@@ -124,7 +130,7 @@ SELECT
               / (bdh.cumul_reviews - 1)
          )
          ELSE NULL END               AS biz_prior_std_stars
-FROM read_parquet($1) rf
+FROM rf_cache rf
 LEFT JOIN biz_day_history bdh
   ON rf.business_id = bdh.business_id
   AND rf.review_date = bdh.review_date
@@ -159,19 +165,27 @@ ORDER BY
 """
 
 
-def build_user_history(con: duckdb.DuckDBPyConnection, parquet_path: str) -> None:
-    """Build user as-of history temp tables."""
-    con.execute(_USER_DAY_STATS_SQL, [parquet_path])
+def load_review_fact_cache(con: duckdb.DuckDBPyConnection, parquet_path: str) -> None:
+    """Load review_fact into a temp table so all queries read from memory."""
+    pq = str(parquet_path).replace("\\", "/")
+    con.execute(_LOAD_RF_SQL.format(path=pq))
+    rows = con.execute("SELECT COUNT(*) FROM rf_cache").fetchone()[0]  # type: ignore[index]
+    logger.info("Cached review_fact: %d rows", rows)
+
+
+def build_user_history(con: duckdb.DuckDBPyConnection) -> None:
+    """Build user as-of history temp tables (requires rf_cache)."""
+    con.execute(_USER_DAY_STATS_SQL)
     con.execute(_USER_DAY_HISTORY_SQL)
-    con.execute(_USER_HISTORY_ASOF_SQL, [parquet_path])
+    con.execute(_USER_HISTORY_ASOF_SQL)
     logger.info("Built user_history_asof temp table.")
 
 
-def build_business_history(con: duckdb.DuckDBPyConnection, parquet_path: str) -> None:
-    """Build business as-of history temp tables."""
-    con.execute(_BIZ_DAY_STATS_SQL, [parquet_path])
+def build_business_history(con: duckdb.DuckDBPyConnection) -> None:
+    """Build business as-of history temp tables (requires rf_cache)."""
+    con.execute(_BIZ_DAY_STATS_SQL)
     con.execute(_BIZ_DAY_HISTORY_SQL)
-    con.execute(_BIZ_HISTORY_ASOF_SQL, [parquet_path])
+    con.execute(_BIZ_HISTORY_ASOF_SQL)
     logger.info("Built biz_history_asof temp table.")
 
 
@@ -230,21 +244,20 @@ def plot_prior_count_cdf(con: duckdb.DuckDBPyConnection, figures: Path) -> None:
 
 def plot_tenure_vs_rating_var(
     con: duckdb.DuckDBPyConnection,
-    review_fact_path: str,
     figures: Path,
 ) -> None:
-    """Scatter: user tenure vs prior rating std (sampled)."""
+    """Scatter: user tenure vs prior rating std (sampled). Requires rf_cache."""
     sql = """
         SELECT
             rf.user_tenure_days,
             uha.user_prior_std_stars
         FROM user_history_asof uha
-        JOIN read_parquet($1) rf USING (review_id)
+        JOIN rf_cache rf USING (review_id)
         WHERE rf.user_tenure_days IS NOT NULL
           AND uha.user_prior_std_stars IS NOT NULL
         USING SAMPLE 50000 ROWS
     """
-    df = con.execute(sql, [review_fact_path]).fetchdf()
+    df = con.execute(sql).fetchdf()
     if df.empty:
         logger.warning("No rows available for tenure-vs-variance plot.")
         return
@@ -281,14 +294,15 @@ def main() -> None:
 
     parquet_path = str(curated / "review_fact.parquet")
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
-        build_user_history(con, parquet_path)
-        build_business_history(con, parquet_path)
+        load_review_fact_cache(con, parquet_path)
+        build_user_history(con)
+        build_business_history(con)
         export_history_tables(con, tables)
         profile_user_history(con, tables)
         plot_prior_count_cdf(con, figures)
-        plot_tenure_vs_rating_var(con, parquet_path, figures)
+        plot_tenure_vs_rating_var(con, figures)
     finally:
         con.close()
 

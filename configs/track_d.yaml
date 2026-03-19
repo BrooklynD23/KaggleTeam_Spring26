@@ -31,6 +31,7 @@ baseline:
 evaluation:
   recall_k: [5, 10, 20]
   ndcg_k: [5, 10, 20]
+  entity_cap_per_group: 10000
 
 leakage:
   banned_fields:

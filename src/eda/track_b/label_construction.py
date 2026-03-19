@@ -9,6 +9,7 @@ import duckdb
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_b.common import (
     TrackBPaths,
     create_snapshot_view,
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 def _read_group_summary(con: duckdb.DuckDBPyConnection, path: str, key_column: str) -> None:
     """Materialize qualifying groups from a Stage 3 artifact."""
+    pq_str = str(path).replace("\\", "/")
     con.execute(
         f"""
         CREATE OR REPLACE TEMP VIEW qualifying_{key_column}_groups AS
@@ -29,10 +31,9 @@ def _read_group_summary(con: duckdb.DuckDBPyConnection, path: str, key_column: s
             age_bucket,
             group_type,
             qualifies
-        FROM read_parquet(?)
+        FROM read_parquet('{pq_str}')
         WHERE qualifies
-        """,
-        [path],
+        """
     )
 
 
@@ -261,7 +262,7 @@ def main() -> None:
                     "Inspect 'track_b_s3_recommended_age_buckets.parquet' for details."
                 )
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         create_snapshot_view(con, config, paths)
         candidates = build_label_candidates(con, paths)

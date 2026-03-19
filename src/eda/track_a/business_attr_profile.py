@@ -13,6 +13,7 @@ import pandas as pd
 import seaborn as sns
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 
 matplotlib.use("Agg")
 
@@ -54,16 +55,16 @@ def _parse_attributes(raw_value: object) -> dict[str, str]:
 
 def load_business_attributes(con: duckdb.DuckDBPyConnection, business_path: Path) -> pd.DataFrame:
     """Load business records and flatten the attributes JSON."""
+    pq = str(business_path).replace("\\", "/")
     base_df = con.execute(
-        """
+        f"""
         SELECT
             business_id,
             city,
             categories,
             CAST(attributes AS VARCHAR) AS attributes_json
-        FROM read_parquet($1)
-        """,
-        [str(business_path)],
+        FROM read_parquet('{pq}')
+        """
     ).fetchdf()
     base_df["city"] = base_df["city"].fillna("Unknown")
     base_df["primary_category"] = (
@@ -158,7 +159,7 @@ def main() -> None:
 
     business_path = curated / "business.parquet"
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         attr_frame = load_business_attributes(con, business_path)
     finally:

@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts import pipeline_dispatcher as dispatcher
+from src.common.gpu_check import check_gpu_available, get_gpu_status
 
 
 COLOR_ENABLED = sys.stdout.isatty()
@@ -243,6 +244,7 @@ def render_dashboard(
     assessments: dict[str, dispatcher.PipelineAssessment],
     statuses: dict[str, str],
     recommendation: str | None,
+    repo_root: Path,
 ) -> None:
     """Render the main overview screen."""
     clear_screen()
@@ -283,6 +285,19 @@ def render_dashboard(
         print(
             f"{YLW}Recommended:{RST} {APPROACH_LABELS[recommendation]} ({suffix})"
         )
+
+    # Disk usage summary
+    from src.common.disk_usage import (
+        compute_outputs_disk_usage,
+        format_bytes,
+        total_outputs_bytes,
+    )
+
+    usage = compute_outputs_disk_usage(repo_root)
+    total = total_outputs_bytes(usage)
+    if total > 0:
+        print(f"   {DIM}Outputs disk usage: {format_bytes(total)}{RST}")
+
     print("Choose 1-6, R for recommended, or Q to quit.")
 
 
@@ -290,10 +305,11 @@ def choose_dashboard_approach(
     assessments: dict[str, dispatcher.PipelineAssessment],
     statuses: dict[str, str],
     recommendation: str | None,
+    repo_root: Path,
 ) -> str | None:
     """Return the chosen approach or None to exit."""
     while True:
-        render_dashboard(assessments, statuses, recommendation)
+        render_dashboard(assessments, statuses, recommendation, repo_root)
         choice = prompt_input("> ").lower()
         if choice in {"q", "quit", "exit"}:
             return None
@@ -411,12 +427,52 @@ def choose_interactive_command(
     """Drive the dashboard flow and return the chosen dispatcher request."""
     while True:
         assessments, statuses, recommendation = build_assessments(repo_root)
-        approach = choose_dashboard_approach(assessments, statuses, recommendation)
+        approach = choose_dashboard_approach(
+            assessments, statuses, recommendation, repo_root
+        )
         if approach is None:
             return None
         action = choose_action(approach, assessments[approach], statuses[approach])
         if action is not None:
             return action
+
+
+def ensure_gpu_if_desired(
+    venv_python: Path,
+    repo_root: Path,
+    auto_yes: bool,
+) -> bool:
+    """Check GPU availability, optionally prompt to install, return True if GPU will be used."""
+    if check_gpu_available(venv_python, repo_root):
+        return True
+
+    available, reason = get_gpu_status(venv_python, repo_root)
+    if available:
+        return True
+
+    req_gpu = repo_root / "requirements-gpu.txt"
+    if not req_gpu.is_file():
+        return False
+
+    message = (
+        f"GPU acceleration not available ({reason or 'unknown'}). "
+        "Install optional GPU packages for faster pipeline? [y/N]: "
+    )
+    if not confirm(message, auto_yes):
+        return False
+
+    print("Installing GPU packages (cudf-cu12, cudf-polars-cu12)...")
+    result = subprocess.run(
+        [str(venv_python), "-m", "pip", "install", "-r", str(req_gpu)],
+        cwd=repo_root,
+        check=False,
+        text=True,
+    )
+    if result.returncode != 0:
+        print("GPU package install failed; continuing with CPU.", file=sys.stderr)
+        return False
+
+    return check_gpu_available(venv_python, repo_root)
 
 
 def ensure_matching_virtualenv(repo_root: Path, auto_yes: bool) -> Path:
@@ -508,8 +564,15 @@ def execute_dispatch(
 ) -> int:
     """Execute the dispatcher with the runtime-matched interpreter."""
     interpreter = ensure_matching_virtualenv(repo_root, auto_yes)
+    use_gpu = ensure_gpu_if_desired(interpreter, repo_root, auto_yes)
     command = build_dispatcher_command(repo_root, interpreter, approach, from_stage, auto_yes)
-    return subprocess.run(command, cwd=repo_root, check=False).returncode
+
+    env = os.environ.copy()
+    if use_gpu:
+        env["YELP_POLARS_ENGINE"] = "gpu"
+        print(f"{GRN}Using GPU acceleration (cudf-polars).{RST}")
+
+    return subprocess.run(command, cwd=repo_root, env=env, check=False).returncode
 
 
 def main(argv: Iterable[str] | None = None) -> int:

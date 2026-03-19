@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_b.common import (
     TrackBPaths,
     create_snapshot_view,
@@ -115,7 +116,7 @@ def main() -> None:
     paths = resolve_paths(config)
     ensure_output_dirs(paths)
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         create_snapshot_view(con, config, paths)
         summary = run_age_effect_summary(con)

@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 
 matplotlib.use("Agg")
 
@@ -28,7 +29,8 @@ def compute_text_length_stats(
     min_nonempty_rate: float,
 ) -> pd.DataFrame:
     """Compute text-length summary statistics from Track A-safe derived columns."""
-    sql = """
+    pq = str(review_fact_path).replace("\\", "/")
+    sql = f"""
         SELECT
             review_stars,
             COUNT(*) AS n_reviews,
@@ -41,21 +43,20 @@ def compute_text_length_stats(
             MEDIAN(text_char_count) AS median_chars,
             STDDEV_SAMP(text_char_count) AS std_chars,
             AVG(CASE WHEN text_word_count > 0 THEN 1.0 ELSE 0.0 END) AS nonempty_text_rate
-        FROM read_parquet($1)
+        FROM read_parquet('{pq}')
         GROUP BY review_stars
         ORDER BY review_stars
     """
-    df = con.execute(sql, [str(review_fact_path)]).fetchdf()
+    df = con.execute(sql).fetchdf()
     out = tables / "track_a_s2_text_length_stats.parquet"
     df.to_parquet(out, index=False)
     logger.info("Wrote %s (%d rows)", out, len(df))
 
     overall_rate = con.execute(
-        """
+        f"""
         SELECT AVG(CASE WHEN text_word_count > 0 THEN 1.0 ELSE 0.0 END)
-        FROM read_parquet($1)
-        """,
-        [str(review_fact_path)],
+        FROM read_parquet('{pq}')
+        """
     ).fetchone()[0]
     if overall_rate is not None and float(overall_rate) < min_nonempty_rate:
         logger.warning(
@@ -90,18 +91,25 @@ def compute_sentiment(
         return None
 
     sample_size = int(config.get("eda", {}).get("sentiment_sample_size", 50_000))
-    # Semijoin against review_fact to restrict to curated review_ids only
+    pq_review = str(review_path).replace("\\", "/")
+    pq_fact = str(review_fact_path).replace("\\", "/")
+    # Prefer a parameterized semijoin so the governance restriction is explicit.
     sql = f"""
         SELECT
             r.review_id,
             r.stars AS review_stars,
             r.text AS review_text
-        FROM read_parquet($1) AS r
-        WHERE r.review_id IN (SELECT review_id FROM read_parquet($2))
+        FROM read_parquet(?) AS r
+        WHERE r.review_id IN (SELECT review_id FROM read_parquet(?))
           AND r.text IS NOT NULL AND LENGTH(TRIM(r.text)) > 0
         USING SAMPLE {sample_size} ROWS
     """
-    sample_df = con.execute(sql, [str(review_path), str(review_fact_path)]).fetchdf()
+    try:
+        sample_df = con.execute(sql, [pq_review, pq_fact]).fetchdf()
+    except Exception:
+        fallback_sql = sql.replace("read_parquet(?)", f"read_parquet('{pq_review}')", 1)
+        fallback_sql = fallback_sql.replace("read_parquet(?)", f"read_parquet('{pq_fact}')", 1)
+        sample_df = con.execute(fallback_sql).fetchdf()
     if sample_df.empty:
         logger.warning("Sentiment sample is empty; skipping optional sentiment output.")
         return None
@@ -129,13 +137,14 @@ def plot_text_length_boxplot(
     figures: Path,
 ) -> None:
     """Boxplot of text word counts by star rating."""
-    sql = """
+    pq = str(review_fact_path).replace("\\", "/")
+    sql = f"""
         SELECT review_stars, text_word_count
-        FROM read_parquet($1)
+        FROM read_parquet('{pq}')
         WHERE text_word_count IS NOT NULL
         USING SAMPLE 200000 ROWS
     """
-    df = con.execute(sql, [str(review_fact_path)]).fetchdf()
+    df = con.execute(sql).fetchdf()
     if df.empty:
         logger.warning("No rows available for text length boxplot.")
         return
@@ -163,13 +172,14 @@ def plot_text_length_histogram(
     figures: Path,
 ) -> None:
     """Histogram of text word counts."""
-    sql = """
+    pq = str(review_fact_path).replace("\\", "/")
+    sql = f"""
         SELECT text_word_count
-        FROM read_parquet($1)
+        FROM read_parquet('{pq}')
         WHERE text_word_count IS NOT NULL
         USING SAMPLE 500000 ROWS
     """
-    df = con.execute(sql, [str(review_fact_path)]).fetchdf()
+    df = con.execute(sql).fetchdf()
     if df.empty:
         logger.warning("No rows available for text length histogram.")
         return
@@ -202,7 +212,7 @@ def main() -> None:
     review_path = curated / "review.parquet"
     nonempty_threshold = float(config.get("quality", {}).get("text_nonnull_threshold", 0.99))
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         compute_text_length_stats(con, review_fact_path, tables, nonempty_threshold)
         compute_sentiment(con, review_path, review_fact_path, config, tables)

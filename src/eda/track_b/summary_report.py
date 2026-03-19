@@ -6,10 +6,10 @@ import argparse
 import logging
 from pathlib import Path
 
-import duckdb
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_b.common import (
     TrackBPaths,
     ensure_output_dirs,
@@ -20,13 +20,14 @@ from src.eda.track_b.common import (
 logger = logging.getLogger(__name__)
 
 
-def _read_parquet_if_present(path: Path) -> pd.DataFrame | None:
+def _read_parquet_if_present(path: Path, config: dict) -> pd.DataFrame | None:
     """Read a parquet artifact if it exists."""
     if not path.is_file():
         return None
-    con = duckdb.connect()
+    pq_str = str(path).replace("\\", "/")
+    con = connect_duckdb(config)
     try:
-        return con.execute("SELECT * FROM read_parquet(?)", [str(path)]).fetchdf()
+        return con.execute(f"SELECT * FROM read_parquet('{pq_str}')").fetchdf()
     finally:
         con.close()
 
@@ -193,31 +194,31 @@ def main() -> None:
     metadata = load_snapshot_metadata(paths)
 
     stage1_df = _read_parquet_if_present(
-        paths.tables_dir / "track_b_s1_useful_vote_distribution.parquet"
+        paths.tables_dir / "track_b_s1_useful_vote_distribution.parquet", config
     )
     stage2_df = _read_parquet_if_present(
-        paths.tables_dir / "track_b_s2_age_effect_summary.parquet"
+        paths.tables_dir / "track_b_s2_age_effect_summary.parquet", config
     )
     stage3_business_df = _read_parquet_if_present(
-        paths.tables_dir / "track_b_s3_group_sizes_by_business_age.parquet"
+        paths.tables_dir / "track_b_s3_group_sizes_by_business_age.parquet", config
     )
     stage3_category_df = _read_parquet_if_present(
-        paths.tables_dir / "track_b_s3_group_sizes_by_category_age.parquet"
+        paths.tables_dir / "track_b_s3_group_sizes_by_category_age.parquet", config
     )
     stage4_summary_df = _read_parquet_if_present(
-        paths.tables_dir / "track_b_s4_label_scheme_summary.parquet"
+        paths.tables_dir / "track_b_s4_label_scheme_summary.parquet", config
     )
     stage5_df = _read_parquet_if_present(
-        paths.tables_dir / "track_b_s5_feature_correlates.parquet"
+        paths.tables_dir / "track_b_s5_feature_correlates.parquet", config
     )
     stage6_pairwise_df = _read_parquet_if_present(
-        paths.tables_dir / "track_b_s6_pairwise_stats.parquet"
+        paths.tables_dir / "track_b_s6_pairwise_stats.parquet", config
     )
     stage6_listwise_df = _read_parquet_if_present(
-        paths.tables_dir / "track_b_s6_listwise_stats.parquet"
+        paths.tables_dir / "track_b_s6_listwise_stats.parquet", config
     )
     stage7_df = _read_parquet_if_present(
-        paths.tables_dir / "track_b_s7_leakage_scope_report.parquet"
+        paths.tables_dir / "track_b_s7_leakage_scope_report.parquet", config
     )
 
     summary = build_summary_markdown(

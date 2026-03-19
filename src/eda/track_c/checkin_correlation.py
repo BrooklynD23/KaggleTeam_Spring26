@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_c.common import (
     ensure_output_dirs,
     month_label,
@@ -32,8 +33,10 @@ def build_checkin_monthly(
     business_path: str,
 ) -> pd.DataFrame:
     """Build city-month check-in volume, falling back to inline parsing."""
+    pq_business = str(business_path).replace("\\", "/")
     if Path(checkin_expanded_path).is_file():
-        sql = """
+        pq_ce = str(checkin_expanded_path).replace("\\", "/")
+        sql = f"""
             SELECT
                 b.city,
                 LOWER(TRIM(b.city)) AS normalized_city,
@@ -41,21 +44,22 @@ def build_checkin_monthly(
                 EXTRACT(YEAR FROM ce.checkin_date) AS checkin_year,
                 EXTRACT(MONTH FROM ce.checkin_date) AS checkin_month,
                 COUNT(*) AS checkin_count
-            FROM read_parquet($1) ce
-            JOIN read_parquet($2) b USING (business_id)
+            FROM read_parquet('{pq_ce}') ce
+            JOIN read_parquet('{pq_business}') b USING (business_id)
             GROUP BY b.city, normalized_city, b.state, checkin_year, checkin_month
         """
-        df = con.execute(sql, [checkin_expanded_path, business_path]).fetchdf()
+        df = con.execute(sql).fetchdf()
     else:
         logger.warning(
             "Missing checkin_expanded.parquet; parsing checkin.parquet inline for Track C."
         )
-        sql = """
+        pq_checkin = str(checkin_path).replace("\\", "/")
+        sql = f"""
             WITH exploded AS (
                 SELECT
                     c.business_id,
                     TRY_CAST(TRIM(token.value) AS DATE) AS checkin_date
-                FROM read_parquet($1) c,
+                FROM read_parquet('{pq_checkin}') c,
                 UNNEST(STRING_SPLIT(c.date, ',')) AS token(value)
                 WHERE TRIM(token.value) != ''
             )
@@ -67,11 +71,11 @@ def build_checkin_monthly(
                 EXTRACT(MONTH FROM e.checkin_date) AS checkin_month,
                 COUNT(*) AS checkin_count
             FROM exploded e
-            JOIN read_parquet($2) b USING (business_id)
+            JOIN read_parquet('{pq_business}') b USING (business_id)
             WHERE e.checkin_date IS NOT NULL
             GROUP BY b.city, normalized_city, b.state, checkin_year, checkin_month
         """
-        df = con.execute(sql, [checkin_path, business_path]).fetchdf()
+        df = con.execute(sql).fetchdf()
     if df.empty:
         return pd.DataFrame(
             columns=[
@@ -181,7 +185,7 @@ def main() -> None:
     paths = resolve_paths(config)
     ensure_output_dirs(paths)
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         monthly_df = build_checkin_monthly(
             con,

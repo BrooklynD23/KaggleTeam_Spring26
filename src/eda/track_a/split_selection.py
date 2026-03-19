@@ -12,6 +12,7 @@ import pandas as pd
 from scipy.stats import ks_2samp
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 
 matplotlib.use("Agg")
 
@@ -24,14 +25,14 @@ def _resolve(config: dict[str, Any], key: str) -> Path:
 
 def load_reviews(con: duckdb.DuckDBPyConnection, review_fact_path: Path) -> pd.DataFrame:
     """Load review dates and stars from the Track A curated table."""
+    pq = str(review_fact_path).replace("\\", "/")
     df = con.execute(
-        """
+        f"""
         SELECT review_id, review_date, review_stars
-        FROM read_parquet($1)
+        FROM read_parquet('{pq}')
         WHERE review_date IS NOT NULL
         ORDER BY review_date, review_id
-        """,
-        [str(review_fact_path)],
+        """
     ).fetchdf()
     df["review_date"] = pd.to_datetime(df["review_date"])
     return df
@@ -188,7 +189,7 @@ def main() -> None:
     min_fraction = float(config.get("quality", {}).get("min_split_fraction", 0.10))
     ks_threshold = float(config.get("quality", {}).get("ks_threshold", 0.05))
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         reviews = load_reviews(con, review_fact_path)
     finally:

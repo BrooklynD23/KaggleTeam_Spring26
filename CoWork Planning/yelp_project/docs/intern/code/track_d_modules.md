@@ -23,19 +23,19 @@ This file is Track D’s shared toolbox.
 
 It resolves paths, loads Track A split dates, parses business attributes, assigns cohort labels, and computes feature-coverage tables.
 
-### Step 2: `business_lifecycle.py`
+### Step 2 (Stage 1): `business_lifecycle.py`
 
 This is a descriptive stage.
 
 It measures how businesses grow over time, but it does not define the real D1 cohorts. That separation is important because lifetime growth is not safe to use as an as-of feature.
 
-### Step 3: `business_cold_start.py`
+### Step 3 (Stage 2): `business_cold_start.py`
 
 This stage computes D1 cohorts directly from reviews before each `as_of_date`.
 
 That means “newness” is based on history that truly existed at the time.
 
-### Step 4: `business_early_signals.py`
+### Step 4 (Stage 3): `business_early_signals.py`
 
 This stage creates D1 features.
 
@@ -46,33 +46,35 @@ It mixes:
 
 For zero-history businesses, interaction-based fields stay `NULL`.
 
-### Step 5: `popularity_baseline.py`
+### Step 5 (Stage 4): `popularity_baseline.py`
 
 This stage builds the baseline that Track D wants to beat later.
 
 It is useful because you should not celebrate a future recommender unless it beats a reasonable “most popular so far” rule.
 
-### Step 6: `user_cold_start.py`
+### Step 6 (Stage 5): `user_cold_start.py`
 
 This stage builds D2 cohorts from prior reviews and tips.
 
 It counts only interactions that happened before the evaluation date.
 
-### Step 7: `user_warmup_profile.py`
+### Step 7 (Stage 6): `user_warmup_profile.py`
 
 This stage summarizes what a user has already shown about their tastes.
 
 It uses aggregates like prior average stars and prior category mix, which are much safer than pretending we know a perfect click-by-click order inside one day.
 
-### Step 8: `evaluation_cohorts.py`
+### Step 8 (Stage 7): `evaluation_cohorts.py`
 
 This stage materializes the candidate sets and label businesses.
 
+It uses a bounded, deterministic construction path: D1 and D2 candidate sets are built from already-materialized Track D artifacts (cohorts, baselines, warm-up profiles) via pandas operations, not spill-heavy DuckDB joins. The config option `evaluation.entity_cap_per_group` caps entities per group for reproducibility. D2 evaluates the primary cold cohort only.
+
 It also removes businesses that were already seen before the recommendation point.
 
-### Step 9: `leakage_check.py` and `summary_report.py`
+### Step 9 (Stages 8–9): `leakage_check.py` and `summary_report.py`
 
-`leakage_check.py` is the blocker. `summary_report.py` is the explainer.
+`leakage_check.py` (Stage 8) is the blocker. `summary_report.py` (Stage 9) is the explainer.
 
 The order matters. The pipeline only writes a clean summary after the hard gate says the artifacts are safe enough to trust.
 

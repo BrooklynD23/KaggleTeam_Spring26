@@ -16,6 +16,7 @@ import pandas as pd
 from scipy.stats import pointbiserialr
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_e.common import (
     ensure_output_dirs,
     load_parquet,
@@ -27,11 +28,12 @@ from src.eda.track_e.common import (
 logger = logging.getLogger(__name__)
 
 
-def _detect_stars_column(review_path: Path) -> str:
-    con = duckdb.connect()
+def _detect_stars_column(review_path: Path, config: dict[str, object]) -> str:
+    pq_str = str(review_path).replace("\\", "/")
+    con = connect_duckdb(config)
     try:
         schema_df = con.execute(
-            "SELECT column_name FROM parquet_schema(?)", [str(review_path)]
+            f"SELECT column_name FROM parquet_schema('{pq_str}')"
         ).fetchdf()
     finally:
         con.close()
@@ -46,12 +48,13 @@ def _detect_stars_column(review_path: Path) -> str:
     )
 
 
-def _build_business_features(review_path: Path) -> pd.DataFrame:
+def _build_business_features(review_path: Path, config: dict[str, object]) -> pd.DataFrame:
     if not review_path.is_file():
         logger.warning("review_fact.parquet not found at %s; proxy features will be empty.", review_path)
         return pd.DataFrame(columns=["business_id"])
 
-    stars_col = _detect_stars_column(review_path)
+    stars_col = _detect_stars_column(review_path, config)
+    pq_str = str(review_path).replace("\\", "/")
     sql = (
         "SELECT "
         "business_id, "
@@ -59,10 +62,10 @@ def _build_business_features(review_path: Path) -> pd.DataFrame:
         f"AVG({stars_col}) AS avg_stars_asof, "
         "AVG(text_word_count) AS text_length_mean_asof, "
         "AVG(useful) AS useful_mean_asof "
-        "FROM read_parquet(?) "
+        f"FROM read_parquet('{pq_str}') "
         "GROUP BY business_id"
     )
-    features = load_parquet(review_path, sql=sql, params=[str(review_path)])
+    features = load_parquet(review_path, sql=sql)
     logger.info("Computed proxy candidate features for %d businesses", len(features))
     return features
 
@@ -177,7 +180,7 @@ def run(config: dict[str, object]) -> None:
     correlation_threshold = float(proxy_cfg.get("correlation_threshold", 0.3))
     min_group_size = int(config.get("subgroups", {}).get("min_group_size", 10))
 
-    features_df = _build_business_features(paths.review_fact_path)
+    features_df = _build_business_features(paths.review_fact_path, config)
 
     subgroup_path = paths.tables_dir / "track_e_s1_subgroup_definitions.parquet"
     if not subgroup_path.is_file():
@@ -189,10 +192,10 @@ def run(config: dict[str, object]) -> None:
 
     user_path = paths.user_path
     if user_path.is_file():
+        pq_str = str(user_path).replace("\\", "/")
         user_df = load_parquet(
             user_path,
-            sql="SELECT user_id, review_count, average_stars FROM read_parquet(?)",
-            params=[str(user_path)],
+            sql=f"SELECT user_id, review_count, average_stars FROM read_parquet('{pq_str}')",
         )
         logger.info(
             "Read %d user records for audit purposes; user-level proxies are not used in this release.",

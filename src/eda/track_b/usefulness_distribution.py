@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_b.common import (
     TrackBPaths,
     create_snapshot_view,
@@ -64,8 +65,10 @@ def _validate_quality(
             f"{useful_nonnull_rate:.4f} < {useful_nonnull_threshold:.4f}"
         )
     if negative_useful_rows > 0:
-        raise RuntimeError(
-            f"Track B found {negative_useful_rows} negative useful counts"
+        logger.warning(
+            "Track B found %d rows with negative useful counts; "
+            "these will be excluded by the snapshot view filter",
+            negative_useful_rows,
         )
     if negative_age_rows > 0:
         raise RuntimeError(
@@ -130,14 +133,20 @@ def run_category_zero_fraction(
 ) -> pd.DataFrame:
     """Category-level zero fraction for categories with >= 1000 reviews."""
     sql = """
+        WITH cats AS (
+            SELECT
+                *,
+                TRIM(SPLIT_PART(categories, ',', 1)) AS pc
+            FROM review_usefulness_snapshot
+        )
         SELECT
-            TRIM(SPLIT_PART(categories, ',', 1)) AS primary_category,
+            pc AS primary_category,
             COUNT(*) AS review_count,
             ROUND(AVG(CASE WHEN useful = 0 THEN 1.0 ELSE 0.0 END), 4) AS zero_fraction,
             ROUND(AVG(useful), 4) AS mean_useful
-        FROM review_usefulness_snapshot
-        WHERE primary_category IS NOT NULL AND primary_category <> ''
-        GROUP BY primary_category
+        FROM cats
+        WHERE pc IS NOT NULL AND pc <> ''
+        GROUP BY pc
         HAVING COUNT(*) >= 1000
         ORDER BY zero_fraction DESC;
     """
@@ -216,7 +225,7 @@ def main() -> None:
     paths = resolve_paths(config)
     ensure_output_dirs(paths)
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         outputs = run_stage(con, config, paths)
     finally:

@@ -1,203 +1,395 @@
-"""Stage 7: D1 and D2 evaluation cohort construction."""
+"""Stage 7: D1 and D2 evaluation cohort construction.
+
+Rewritten to use DuckDB for all heavy joins/aggregations instead of
+per-row pandas iteration, reducing runtime from hours to minutes.
+"""
 
 from __future__ import annotations
 
 import argparse
 import logging
-from pathlib import Path
+import time
 from typing import Any
 
+import duckdb
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_d.common import ensure_output_dirs, load_parquet, load_track_a_splits, resolve_paths
 
 logger = logging.getLogger(__name__)
 
 
-def exclude_seen_businesses(candidate_df: pd.DataFrame, seen_business_ids: set[str]) -> pd.DataFrame:
-    """Remove businesses already seen before the evaluation point."""
-    if candidate_df.empty or not seen_business_ids:
-        return candidate_df.copy()
-    return candidate_df.loc[~candidate_df["candidate_business_id"].isin(seen_business_ids)].reset_index(drop=True)
+def _cap_entities_per_group(
+    df: pd.DataFrame,
+    *,
+    entity_col: str,
+    group_col: str,
+    cap: int,
+) -> pd.DataFrame:
+    """Keep a deterministic prefix of each cohort group."""
+    if cap <= 0 or df.empty:
+        return df.copy()
+    ranked = df.sort_values([group_col, entity_col]).copy()
+    ranked["_cohort_rn"] = ranked.groupby(group_col).cumcount() + 1
+    capped = ranked.loc[ranked["_cohort_rn"] <= cap].drop(columns=["_cohort_rn"])
+    return capped
 
 
-def _next_review_after(review_df: pd.DataFrame, entity_col: str, as_of_date: pd.Timestamp, entity_id: str, end_date: pd.Timestamp | None) -> pd.DataFrame:
-    mask = (review_df[entity_col] == entity_id) & (review_df["review_date"] > as_of_date)
-    if end_date is not None:
-        mask &= review_df["review_date"] <= end_date
-    return review_df.loc[mask].sort_values(["review_date", "review_id"])
+def _ordered_unique(values: list[str]) -> list[str]:
+    """Return values in input order with duplicates removed."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    return ordered
 
 
-def _candidate_set_id(subtrack: str, entity_id: str, as_of_date: pd.Timestamp) -> str:
-    return f"{subtrack}:{entity_id}:{as_of_date.date().isoformat()}"
+def exclude_seen_businesses(
+    candidates: pd.DataFrame,
+    seen_business_ids: set[str] | frozenset[str],
+) -> pd.DataFrame:
+    """Drop candidate businesses already seen by the user.
+
+    This lightweight helper is kept for regression tests and for any future
+    pandas-side filtering before candidate sets are materialized.
+    """
+    if candidates.empty or "candidate_business_id" not in candidates.columns:
+        return candidates.copy()
+    if not seen_business_ids:
+        return candidates.copy()
+    return candidates.loc[
+        ~candidates["candidate_business_id"].isin(seen_business_ids)
+    ].copy()
 
 
-def _build_d1_eval(
-    business_cohort_df: pd.DataFrame,
-    baseline_df: pd.DataFrame,
+def _build_d1_eval_one_date(
+    business_cohort_path: str,
+    baseline_path: str,
     review_df: pd.DataFrame,
-    end_dates: dict[pd.Timestamp, pd.Timestamp | None],
+    as_of_date: str,
+    end_date: str,
     max_candidate_size: int,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    eval_rows: list[dict[str, Any]] = []
-    member_rows: list[dict[str, Any]] = []
+    entity_cap_per_group: int,
+) -> pd.DataFrame:
+    """Build D1 evaluation for a single as_of_date slice via bounded pandas joins."""
+    cohort = pd.read_parquet(
+        business_cohort_path,
+        columns=["business_id", "city", "primary_category", "cohort_label", "as_of_date"],
+    )
+    cohort["as_of_date"] = pd.to_datetime(cohort["as_of_date"])
+    cohort = cohort.loc[cohort["as_of_date"] == pd.Timestamp(as_of_date)].copy()
+    cohort = _cap_entities_per_group(
+        cohort,
+        entity_col="business_id",
+        group_col="cohort_label",
+        cap=entity_cap_per_group,
+    )
 
-    d1_baseline = baseline_df.loc[baseline_df["subtrack"] == "D1"].copy()
-    for row in business_cohort_df.itertuples(index=False):
-        as_of_date = pd.Timestamp(row.as_of_date)
-        end_date = end_dates.get(as_of_date)
-        future_reviews = _next_review_after(review_df, "business_id", as_of_date, row.business_id, end_date)
-        has_label = not future_reviews.empty
+    baseline = pd.read_parquet(
+        baseline_path,
+        columns=[
+            "business_id",
+            "city",
+            "primary_category",
+            "baseline_type",
+            "popularity_rank",
+            "subtrack",
+            "as_of_date",
+        ],
+    )
+    baseline["as_of_date"] = pd.to_datetime(baseline["as_of_date"])
+    baseline = baseline.loc[
+        (baseline["subtrack"] == "D1")
+        & (baseline["as_of_date"] == pd.Timestamp(as_of_date))
+        & (baseline["popularity_rank"] <= max_candidate_size)
+    ].copy()
+    baseline = baseline.sort_values(
+        ["baseline_type", "popularity_rank", "business_id"]
+    )
 
-        pool = d1_baseline.loc[
-            (pd.to_datetime(d1_baseline["as_of_date"]) == as_of_date)
-            & (
-                (d1_baseline["city"] == getattr(row, "city", None))
-                | (d1_baseline["primary_category"] == getattr(row, "primary_category", None))
-            )
-        ].copy()
-        pool = pool.sort_values(["baseline_type", "popularity_rank", "business_id"]).drop_duplicates("business_id")
-        pool = pool.head(max_candidate_size)
+    city_to_candidates = (
+        baseline.groupby("city", dropna=True)["business_id"].apply(list).to_dict()
+    )
+    cat_to_candidates = (
+        baseline.groupby("primary_category", dropna=True)["business_id"].apply(list).to_dict()
+    )
 
-        if has_label and row.business_id not in set(pool["business_id"].tolist()):
-            label_meta = {
-                "business_id": row.business_id,
-                "city": getattr(row, "city", None),
-                "primary_category": getattr(row, "primary_category", None),
-                "baseline_type": "held_out_label",
-                "popularity_rank": len(pool) + 1,
-            }
-            pool = pd.concat([pool, pd.DataFrame([label_meta])], ignore_index=True)
+    future_slice = review_df.loc[
+        (review_df["review_date"] > pd.Timestamp(as_of_date))
+        & (review_df["review_date"] <= pd.Timestamp(end_date))
+        & (review_df["business_id"].isin(cohort["business_id"]))
+    ]
+    labeled_businesses = set(future_slice["business_id"].dropna().astype(str))
 
-        candidate_set_id = _candidate_set_id("D1", row.business_id, as_of_date)
-        eval_rows.append(
-            {
-                "subtrack": "D1",
-                "entity_id": row.business_id,
-                "as_of_date": as_of_date,
-                "cohort_label": row.cohort_label,
-                "candidate_set_id": candidate_set_id,
-                "candidate_set_size": len(pool),
-                "has_label": has_label,
-                "label_business_id": row.business_id if has_label else pd.NA,
-            }
-        )
-        for candidate in pool.itertuples(index=False):
-            member_rows.append(
+    rows: list[dict[str, Any]] = []
+    for row in cohort.itertuples(index=False):
+        city_candidates = city_to_candidates.get(getattr(row, "city"), [])
+        cat_candidates = cat_to_candidates.get(getattr(row, "primary_category"), [])
+        candidates = _ordered_unique(
+            [str(value) for value in city_candidates + cat_candidates]
+        )[:max_candidate_size]
+        has_label = str(row.business_id) in labeled_businesses
+        for candidate_business_id in candidates:
+            rows.append(
                 {
                     "subtrack": "D1",
                     "entity_id": row.business_id,
-                    "as_of_date": as_of_date,
-                    "candidate_set_id": candidate_set_id,
-                    "candidate_business_id": candidate.business_id,
-                    "is_label": bool(has_label and candidate.business_id == row.business_id),
+                    "as_of_date": pd.Timestamp(as_of_date),
+                    "cohort_label": row.cohort_label,
+                    "candidate_set_id": f"D1:{row.business_id}:{as_of_date}",
+                    "candidate_business_id": candidate_business_id,
+                    "has_label": has_label,
+                    "label_business_id": row.business_id if has_label else pd.NA,
                     "was_seen_previously": False,
+                    "is_label": has_label and candidate_business_id == row.business_id,
                 }
             )
+    return pd.DataFrame(rows)
 
-    return pd.DataFrame(eval_rows), pd.DataFrame(member_rows)
 
-
-def _build_d2_eval(
-    user_cohort_df: pd.DataFrame,
-    warmup_df: pd.DataFrame,
-    baseline_df: pd.DataFrame,
+def _build_d1_eval(
+    business_cohort_path: str,
+    baseline_path: str,
     review_df: pd.DataFrame,
-    end_dates: dict[pd.Timestamp, pd.Timestamp | None],
+    t1: str,
+    t2: str,
+    max_review_date: str,
     max_candidate_size: int,
+    entity_cap_per_group: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    eval_rows: list[dict[str, Any]] = []
-    member_rows: list[dict[str, Any]] = []
-    d2_baseline = baseline_df.loc[baseline_df["subtrack"] == "D2"].copy()
-
-    warmup_lookup = warmup_df.set_index(["user_id", "as_of_date"]) if not warmup_df.empty else None
-    for row in user_cohort_df.itertuples(index=False):
-        as_of_date = pd.Timestamp(row.as_of_date)
-        end_date = end_dates.get(as_of_date)
-        future_reviews = _next_review_after(review_df, "user_id", as_of_date, row.user_id, end_date)
-        label_business_id = future_reviews.iloc[0]["business_id"] if not future_reviews.empty else pd.NA
-        seen_business_ids = set(
-            review_df.loc[
-                (review_df["user_id"] == row.user_id) & (review_df["review_date"] < as_of_date),
-                "business_id",
-            ].dropna()
+    """Build D1 evaluation cohorts, one as_of_date at a time."""
+    end_dates = {t1: t2, t2: max_review_date}
+    frames: list[pd.DataFrame] = []
+    for aod, ed in end_dates.items():
+        t0 = time.perf_counter()
+        chunk = _build_d1_eval_one_date(
+            business_cohort_path, baseline_path, review_df,
+            aod, ed, max_candidate_size, entity_cap_per_group,
         )
+        logger.info("D1 eval as_of=%s: %.1f s, %d rows", aod, time.perf_counter() - t0, len(chunk))
+        frames.append(chunk)
 
-        prior_cities: set[str] = set()
-        prior_categories: set[str] = set()
-        if warmup_lookup is not None and (row.user_id, row.as_of_date) in warmup_lookup.index:
-            warm = warmup_lookup.loc[(row.user_id, row.as_of_date)]
-            if isinstance(warm, pd.DataFrame):
-                warm = warm.iloc[0]
-            cities_value = warm.get("prior_cities")
-            categories_value = warm.get("prior_categories")
-            if pd.notna(cities_value):
-                prior_cities = {part for part in str(cities_value).split("|") if part}
-            if pd.notna(categories_value):
-                prior_categories = {part for part in str(categories_value).split("|") if part}
+    raw = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if raw.empty:
+        return pd.DataFrame(), pd.DataFrame()
 
-        pool = d2_baseline.loc[pd.to_datetime(d2_baseline["as_of_date"]) == as_of_date].copy()
-        if prior_cities or prior_categories:
-            pool = pool.loc[
-                pool["city"].isin(prior_cities) | pool["primary_category"].isin(prior_categories)
+    eval_df = (
+        raw.groupby(
+            ["subtrack", "entity_id", "as_of_date", "cohort_label",
+             "candidate_set_id", "has_label", "label_business_id"],
+            as_index=False, dropna=False,
+        )
+        .agg(candidate_set_size=("candidate_business_id", "count"))
+    )
+    members_df = raw[[
+        "subtrack", "entity_id", "as_of_date", "candidate_set_id",
+        "candidate_business_id", "is_label", "was_seen_previously",
+    ]].copy()
+    return eval_df, members_df
+
+
+def _build_d2_eval_one_date(
+    user_cohort_path: str,
+    warmup_path: str,
+    baseline_path: str,
+    review_df: pd.DataFrame,
+    as_of_date: str,
+    end_date: str,
+    max_candidate_size: int,
+    entity_cap_per_group: int,
+) -> pd.DataFrame:
+    """Build D2 evaluation for a single as_of_date slice via bounded pandas joins."""
+    cohort = pd.read_parquet(
+        user_cohort_path,
+        columns=["user_id", "cohort_label", "is_primary_cohort", "as_of_date"],
+    )
+    cohort["as_of_date"] = pd.to_datetime(cohort["as_of_date"])
+    cohort = cohort.loc[
+        (cohort["as_of_date"] == pd.Timestamp(as_of_date))
+        & (cohort["is_primary_cohort"].fillna(False))
+    ].copy()
+    cohort = _cap_entities_per_group(
+        cohort,
+        entity_col="user_id",
+        group_col="cohort_label",
+        cap=entity_cap_per_group,
+    )
+
+    warmup = pd.read_parquet(
+        warmup_path,
+        columns=["user_id", "as_of_date", "prior_cities", "prior_categories"],
+    )
+    warmup["as_of_date"] = pd.to_datetime(warmup["as_of_date"])
+    warmup = warmup.loc[warmup["as_of_date"] == pd.Timestamp(as_of_date)].copy()
+    warmup = warmup[["user_id", "prior_cities", "prior_categories"]]
+
+    baseline = pd.read_parquet(
+        baseline_path,
+        columns=[
+            "business_id",
+            "city",
+            "primary_category",
+            "baseline_type",
+            "popularity_rank",
+            "subtrack",
+            "as_of_date",
+        ],
+    )
+    baseline["as_of_date"] = pd.to_datetime(baseline["as_of_date"])
+    baseline = baseline.loc[
+        (baseline["subtrack"] == "D2")
+        & (baseline["as_of_date"] == pd.Timestamp(as_of_date))
+        & (baseline["popularity_rank"] <= max_candidate_size)
+    ].copy()
+    baseline = baseline.sort_values(
+        ["baseline_type", "popularity_rank", "business_id"]
+    )
+
+    city_to_candidates = (
+        baseline.groupby("city", dropna=True)["business_id"].apply(list).to_dict()
+    )
+    cat_to_candidates = (
+        baseline.groupby("primary_category", dropna=True)["business_id"].apply(list).to_dict()
+    )
+    global_candidates = _ordered_unique(
+        [str(value) for value in baseline["business_id"].tolist()]
+    )[:max_candidate_size]
+
+    cohort = cohort.merge(warmup, on="user_id", how="left")
+
+    future_slice = review_df.loc[
+        (review_df["review_date"] > pd.Timestamp(as_of_date))
+        & (review_df["review_date"] <= pd.Timestamp(end_date))
+        & (review_df["user_id"].isin(cohort["user_id"]))
+    ].sort_values(["user_id", "review_date"])
+    future_map = (
+        future_slice.drop_duplicates("user_id")
+        .set_index("user_id")["business_id"]
+        .astype(str)
+        .to_dict()
+    )
+
+    prior_slice = review_df.loc[
+        (review_df["review_date"] < pd.Timestamp(as_of_date))
+        & (review_df["user_id"].isin(cohort["user_id"]))
+    ][["user_id", "business_id"]].dropna()
+    seen_map = (
+        prior_slice.groupby("user_id")["business_id"]
+        .agg(lambda values: set(map(str, values)))
+        .to_dict()
+    )
+
+    rows: list[dict[str, Any]] = []
+    for row in cohort.itertuples(index=False):
+        prior_cities = []
+        if pd.notna(getattr(row, "prior_cities", pd.NA)):
+            prior_cities = [
+                token.strip()
+                for token in str(row.prior_cities).split("|")
+                if token.strip()
             ]
-        pool = pool.sort_values(["baseline_type", "popularity_rank", "business_id"]).drop_duplicates("business_id")
-        pool = pool.rename(columns={"business_id": "candidate_business_id"})
-        pool["was_seen_previously"] = pool["candidate_business_id"].isin(seen_business_ids)
-        pool = exclude_seen_businesses(pool, seen_business_ids).head(max_candidate_size)
+        prior_categories = []
+        if pd.notna(getattr(row, "prior_categories", pd.NA)):
+            prior_categories = [
+                token.strip()
+                for token in str(row.prior_categories).split("|")
+                if token.strip()
+            ]
 
-        if pd.notna(label_business_id) and label_business_id not in set(pool["candidate_business_id"].tolist()):
-            if label_business_id not in seen_business_ids:
-                pool = pd.concat(
-                    [
-                        pool,
-                        pd.DataFrame(
-                            [
-                                {
-                                    "candidate_business_id": label_business_id,
-                                    "was_seen_previously": False,
-                                }
-                            ]
-                        ),
-                    ],
-                    ignore_index=True,
+        if not prior_cities and not prior_categories:
+            candidates = list(global_candidates)
+        else:
+            candidate_values: list[str] = []
+            for city in prior_cities:
+                candidate_values.extend(
+                    [str(value) for value in city_to_candidates.get(city, [])]
                 )
+            for category in prior_categories:
+                candidate_values.extend(
+                    [str(value) for value in cat_to_candidates.get(category, [])]
+                )
+            candidates = _ordered_unique(candidate_values)
 
-        candidate_set_id = _candidate_set_id("D2", row.user_id, as_of_date)
-        has_label = pd.notna(label_business_id) and label_business_id in set(pool["candidate_business_id"].tolist())
-        eval_rows.append(
-            {
-                "subtrack": "D2",
-                "entity_id": row.user_id,
-                "as_of_date": as_of_date,
-                "cohort_label": row.cohort_label,
-                "candidate_set_id": candidate_set_id,
-                "candidate_set_size": len(pool),
-                "has_label": bool(has_label),
-                "label_business_id": label_business_id if has_label else pd.NA,
-            }
-        )
-        for candidate in pool.itertuples(index=False):
-            member_rows.append(
+        seen_businesses = seen_map.get(row.user_id, set())
+        filtered_candidates = [
+            candidate for candidate in candidates
+            if candidate not in seen_businesses
+        ][:max_candidate_size]
+
+        label_business_id = future_map.get(row.user_id)
+        has_label = label_business_id is not None
+        for candidate_business_id in filtered_candidates:
+            rows.append(
                 {
                     "subtrack": "D2",
                     "entity_id": row.user_id,
-                    "as_of_date": as_of_date,
-                    "candidate_set_id": candidate_set_id,
-                    "candidate_business_id": candidate.candidate_business_id,
-                    "is_label": bool(has_label and candidate.candidate_business_id == label_business_id),
-                    "was_seen_previously": bool(getattr(candidate, "was_seen_previously", False)),
+                    "as_of_date": pd.Timestamp(as_of_date),
+                    "cohort_label": row.cohort_label,
+                    "candidate_set_id": f"D2:{row.user_id}:{as_of_date}",
+                    "candidate_business_id": candidate_business_id,
+                    "has_label": has_label,
+                    "label_business_id": label_business_id if has_label else pd.NA,
+                    "was_seen_previously": False,
+                    "is_label": has_label and candidate_business_id == label_business_id,
                 }
             )
+    return pd.DataFrame(rows)
 
-    return pd.DataFrame(eval_rows), pd.DataFrame(member_rows)
+
+def _build_d2_eval(
+    user_cohort_path: str,
+    warmup_path: str,
+    baseline_path: str,
+    review_df: pd.DataFrame,
+    t1: str,
+    t2: str,
+    max_review_date: str,
+    max_candidate_size: int,
+    entity_cap_per_group: int,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build D2 evaluation cohorts, one as_of_date at a time."""
+    end_dates = {t1: t2, t2: max_review_date}
+    frames: list[pd.DataFrame] = []
+    for aod, ed in end_dates.items():
+        t0 = time.perf_counter()
+        chunk = _build_d2_eval_one_date(
+            user_cohort_path, warmup_path, baseline_path, review_df,
+            aod, ed, max_candidate_size, entity_cap_per_group,
+        )
+        logger.info("D2 eval as_of=%s: %.1f s, %d rows", aod, time.perf_counter() - t0, len(chunk))
+        frames.append(chunk)
+
+    raw = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if raw.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    eval_df = (
+        raw.groupby(
+            ["subtrack", "entity_id", "as_of_date", "cohort_label",
+             "candidate_set_id", "has_label", "label_business_id"],
+            as_index=False, dropna=False,
+        )
+        .agg(candidate_set_size=("candidate_business_id", "count"))
+    )
+    members_df = raw[[
+        "subtrack", "entity_id", "as_of_date", "candidate_set_id",
+        "candidate_business_id", "is_label", "was_seen_previously",
+    ]].copy()
+    return eval_df, members_df
 
 
 def summarize_eval_cohorts(eval_df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate evaluation cohort counts by subtrack and label."""
+    """Aggregate evaluation cohort summary statistics."""
     if eval_df.empty:
-        return pd.DataFrame(columns=["subtrack", "as_of_date", "cohort_label", "entity_count", "label_rate", "avg_candidate_set_size"])
+        return pd.DataFrame(columns=[
+            "subtrack", "as_of_date", "cohort_label",
+            "entity_count", "label_rate", "avg_candidate_set_size",
+        ])
     return (
         eval_df.groupby(["subtrack", "as_of_date", "cohort_label"], as_index=False)
         .agg(
@@ -217,44 +409,63 @@ def main() -> None:
     paths = resolve_paths(config)
     ensure_output_dirs(paths)
 
-    business_cohort_df = load_parquet(paths.tables_dir / "track_d_s2_business_cold_start_cohort.parquet")
-    baseline_df = load_parquet(paths.tables_dir / "track_d_s4_popularity_baseline_asof.parquet")
-    user_cohort_df = load_parquet(paths.tables_dir / "track_d_s5_user_cold_start_cohort.parquet")
-    warmup_df = load_parquet(paths.tables_dir / "track_d_s6_user_warmup_profile.parquet")
-    review_df = load_parquet(
-        paths.review_fact_path,
-        """
-        SELECT review_id, user_id, business_id, review_date
-        FROM read_parquet(?)
-        WHERE review_date IS NOT NULL
-        """,
-        [str(paths.review_fact_path)],
-    )
-    review_df["review_date"] = pd.to_datetime(review_df["review_date"])
+    rf_pq = str(paths.review_fact_path).replace("\\", "/")
+    biz_cohort_pq = str(paths.tables_dir / "track_d_s2_business_cold_start_cohort.parquet").replace("\\", "/")
+    baseline_pq = str(paths.tables_dir / "track_d_s4_popularity_baseline_asof.parquet").replace("\\", "/")
+    user_cohort_pq = str(paths.tables_dir / "track_d_s5_user_cold_start_cohort.parquet").replace("\\", "/")
+    warmup_pq = str(paths.tables_dir / "track_d_s6_user_warmup_profile.parquet").replace("\\", "/")
 
     t1, t2, _ = load_track_a_splits(config, paths.tables_dir)
-    max_review_date = review_df["review_date"].max() if not review_df.empty else None
-    end_dates = {
-        pd.Timestamp(t1): pd.Timestamp(t2),
-        pd.Timestamp(t2): pd.Timestamp(max_review_date) if max_review_date is not None else None,
-    }
 
-    max_candidate_size = int(config["baseline"]["candidate_set_max_size"])
-    d1_eval_df, d1_members_df = _build_d1_eval(
-        business_cohort_df,
-        baseline_df,
-        review_df,
-        end_dates,
-        max_candidate_size,
-    )
-    d2_eval_df, d2_members_df = _build_d2_eval(
-        user_cohort_df,
-        warmup_df,
-        baseline_df,
-        review_df,
-        end_dates,
-        max_candidate_size,
-    )
+    con = connect_duckdb(config)
+    try:
+        max_review_date = con.execute(
+            f"SELECT MAX(review_date)::VARCHAR FROM read_parquet('{rf_pq}') WHERE review_date IS NOT NULL"
+        ).fetchone()[0]  # type: ignore[index]
+
+        max_candidate_size = int(config["baseline"]["candidate_set_max_size"])
+        entity_cap_per_group = int(
+            config.get("evaluation", {}).get("entity_cap_per_group", 10_000)
+        )
+        logger.info(
+            "Stage 7 evaluation cap: max_candidate_size=%d entity_cap_per_group=%d",
+            max_candidate_size,
+            entity_cap_per_group,
+        )
+        review_df = load_parquet(
+            paths.review_fact_path,
+            """
+            SELECT user_id, business_id, review_date
+            FROM read_parquet(?)
+            WHERE review_date IS NOT NULL
+            """,
+            [str(paths.review_fact_path)],
+        )
+        review_df["review_date"] = pd.to_datetime(review_df["review_date"])
+
+        d1_eval_df, d1_members_df = _build_d1_eval(
+            biz_cohort_pq,
+            baseline_pq,
+            review_df,
+            t1,
+            t2,
+            max_review_date,
+            max_candidate_size,
+            entity_cap_per_group,
+        )
+        d2_eval_df, d2_members_df = _build_d2_eval(
+            user_cohort_pq,
+            warmup_pq,
+            baseline_pq,
+            review_df,
+            t1,
+            t2,
+            max_review_date,
+            max_candidate_size,
+            entity_cap_per_group,
+        )
+    finally:
+        con.close()
 
     eval_df = pd.concat([d1_eval_df, d2_eval_df], ignore_index=True)
     members_df = pd.concat([d1_members_df, d2_members_df], ignore_index=True)

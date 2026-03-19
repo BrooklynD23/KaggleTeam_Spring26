@@ -886,7 +886,7 @@ python -m src.eda.track_d.evaluation_cohorts --config configs/track_d.yaml
 - `outputs/tables/track_d_s6_user_warmup_profile.parquet` (Stage 6)
 - Track A splits via `load_splits_strict()`
 - `data/curated/review_fact.parquet`
-- `configs/track_d.yaml` — `baseline.candidate_set_max_size`, `evaluation.*`
+- `configs/track_d.yaml` — `baseline.candidate_set_max_size`, `evaluation.entity_cap_per_group` (default 10,000), `evaluation.recall_k`, `evaluation.ndcg_k`
 
 **Outputs:**
 - `outputs/tables/track_d_s7_eval_cohorts.parquet`
@@ -895,14 +895,16 @@ python -m src.eda.track_d.evaluation_cohorts --config configs/track_d.yaml
 
 **Key logic:**
 
+**Implementation approach (bounded construction):** D1 and D2 no longer use spill-heavy DuckDB joins. Candidate sets are built from already-materialized Track D artifacts via pandas operations. `evaluation.entity_cap_per_group` (default 10,000) caps entities per group so Stage 7 stays reproducible and tractable on the Yelp dataset instead of materializing unbounded candidate pools. Candidate sets remain deterministic.
+
 **D1 evaluation:**
 1. Identify businesses that were cold as of T1 (or T2) and received at least one review in the subsequent test period (between T1 and T2, or after T2).
-2. Define candidate set: businesses in the same city/category, limited to `candidate_set_max_size`.
+2. Define candidate set: businesses in the same city/category, limited to `candidate_set_max_size`, with entity cap applied.
 3. Ground truth: which candidates did a user actually review in the test period.
 
 **D2 evaluation:**
-1. Identify users that were cold as of T1 (or T2).
-2. Define candidate set: businesses in cities/categories the user has previously interacted with, limited to `candidate_set_max_size`.
+1. Identify users that were cold as of T1 (or T2). D2 evaluates the primary cold cohort only.
+2. Define candidate set: businesses in cities/categories the user has previously interacted with, limited to `candidate_set_max_size`, with entity cap applied.
 3. Ground truth: which business the user actually reviewed next (after the evaluation point).
 
 **CRITICAL:** Candidate sets must exclude businesses the user has already reviewed before the recommendation point (evaluation contamination).

@@ -12,6 +12,9 @@ cross_dependencies:
     - configs/base.yaml
     - configs/track_a.yaml
     - configs/track_b.yaml
+    - configs/track_c.yaml
+    - configs/track_d.yaml
+    - configs/track_e.yaml
   writes: []
   siblings: []
 
@@ -48,7 +51,7 @@ A semester-scale data science project analyzing the **Yelp Open Dataset** across
 | D | Cold-start recommendation for businesses and users |
 | E | Bias and disparity auditing across groups |
 
-Tracks A and B are fully implemented. Tracks C, D, and E exist in planning documents only.
+Tracks A, B, C, D, and E are implemented. Track D Stage 7 uses bounded construction with `evaluation.entity_cap_per_group` for tractability.
 
 ## Repository Map
 
@@ -60,7 +63,10 @@ KaggleTeam_Spring26/
 ├── configs/
 │   ├── base.yaml                 ← shared config (paths, DuckDB settings)
 │   ├── track_a.yaml              ← Track A overrides
-│   └── track_b.yaml              ← Track B overrides
+│   ├── track_b.yaml              ← Track B overrides
+│   ├── track_c.yaml              ← Track C overrides
+│   ├── track_d.yaml              ← Track D overrides
+│   └── track_e.yaml              ← Track E overrides
 ├── data/
 │   ├── raw/                      ← extracted Yelp NDJSON files
 │   ├── interim/                  ← optional intermediate assets
@@ -81,7 +87,10 @@ KaggleTeam_Spring26/
 │   ├── curate/                   ← shared curated table construction
 │   └── eda/
 │       ├── track_a/              ← 8-stage Track A EDA pipeline
-│       └── track_b/              ← 8-stage Track B EDA pipeline
+│       ├── track_b/              ← 8-stage Track B EDA pipeline
+│       ├── track_c/              ← 9-stage Track C EDA pipeline
+│       ├── track_d/              ← 9-stage Track D cold-start EDA pipeline
+│       └── track_e/              ← 9-stage Track E bias/disparity EDA pipeline
 ├── tests/                        ← regression and contract tests
 └── CoWork Planning/
     └── yelp_project/             ← PRD, implementation plans, per-track planning docs
@@ -106,7 +115,10 @@ data/curated/review_fact_track_b.parquet   ← Track B input
 data/curated/snapshot_metadata.json        ← Track B snapshot date
         │
         ├──▶  src.eda.track_a.*   → outputs/tables/track_a_*, outputs/figures/track_a_*
-        └──▶  src.eda.track_b.*   → outputs/tables/track_b_*, outputs/figures/track_b_*
+        ├──▶  src.eda.track_b.*   → outputs/tables/track_b_*, outputs/figures/track_b_*
+        ├──▶  src.eda.track_c.*   → outputs/tables/track_c_*, outputs/figures/track_c_*
+        ├──▶  src.eda.track_d.*   → outputs/tables/track_d_*, outputs/figures/track_d_* (depends on Track A Stage 5)
+        └──▶  src.eda.track_e.*   → outputs/tables/track_e_*, outputs/figures/track_e_*
 ```
 
 **Execution order matters.** Always run shared → Track A/B. Never run track stages before curation is complete.
@@ -134,6 +146,9 @@ python scripts/run_pipeline.py
 python scripts/run_pipeline.py --approach shared
 python scripts/run_pipeline.py --approach track_a
 python scripts/run_pipeline.py --approach track_b
+python scripts/run_pipeline.py --approach track_c
+python scripts/run_pipeline.py --approach track_d
+python scripts/run_pipeline.py --approach track_e
 
 # Or via OS wrappers
 ./run_pipeline.sh shared
@@ -155,6 +170,8 @@ Load **only** the CLAUDE.md files needed for your current task. Start from the o
 | Working on any source code | `CLAUDE.md` → `src/CLAUDE.md` → relevant sub-package |
 | Working on Track A code | `CLAUDE.md` → `src/CLAUDE.md` → `src/eda/CLAUDE.md` → `src/eda/track_a/CLAUDE.md` |
 | Working on Track B code | `CLAUDE.md` → `src/CLAUDE.md` → `src/eda/CLAUDE.md` → `src/eda/track_b/CLAUDE.md` |
+| Working on Track C code | `CLAUDE.md` → `src/CLAUDE.md` → `src/eda/CLAUDE.md` → `src/eda/track_c/CLAUDE.md` |
+| Working on Track D code | `CLAUDE.md` → `src/CLAUDE.md` → `src/eda/CLAUDE.md` → `src/eda/track_d/CLAUDE.md` |
 | Working on Track E code | `CLAUDE.md` → `src/CLAUDE.md` → `src/eda/CLAUDE.md` → `src/eda/track_e/CLAUDE.md` |
 | Working on ingestion | `CLAUDE.md` → `src/CLAUDE.md` → `src/ingest/CLAUDE.md` |
 | Working on planning docs | `CLAUDE.md` → `CoWork Planning/CLAUDE.md` → relevant track |

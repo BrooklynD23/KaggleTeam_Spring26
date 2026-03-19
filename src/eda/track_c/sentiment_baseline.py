@@ -13,6 +13,7 @@ import pandas as pd
 from scipy.stats import spearmanr
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_c.common import (
     drop_raw_text_columns,
     ensure_output_dirs,
@@ -157,7 +158,7 @@ def main() -> None:
         config.get("quality", {}).get("sentiment_star_correlation_min", 0.3)
     )
 
-    con = duckdb.connect()
+    con = connect_duckdb(config)
     try:
         aggregate_df, review_level = build_sentiment_aggregate(
             con,

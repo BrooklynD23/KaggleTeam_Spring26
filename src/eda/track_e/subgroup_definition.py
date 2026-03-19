@@ -198,10 +198,10 @@ def run(config: dict[str, Any]) -> None:
     # 1. Load business data
     logger.info("Loading business data from %s", paths.business_path)
     if paths.business_path.is_file():
+        pq_str = str(paths.business_path).replace("\\", "/")
         business_df = load_parquet(
             paths.business_path,
-            "SELECT business_id, city, state, categories, attributes FROM read_parquet(?)",
-            [str(paths.business_path)],
+            f"SELECT business_id, city, state, categories, attributes FROM read_parquet('{pq_str}')",
         )
     else:
         logger.warning("business.parquet not found at %s — using empty frame.", paths.business_path)
@@ -212,15 +212,12 @@ def run(config: dict[str, Any]) -> None:
     # 2. Load per-business review counts from review_fact
     logger.info("Loading review counts from %s", paths.review_fact_path)
     if paths.review_fact_path.is_file():
+        pq_str = str(paths.review_fact_path).replace("\\", "/")
         sql = (
-            "SELECT business_id, COUNT(*) AS review_count "
-            "FROM read_parquet(?) GROUP BY business_id"
+            f"SELECT business_id, COUNT(*) AS review_count "
+            f"FROM read_parquet('{pq_str}') GROUP BY business_id"
         )
-        rc_df = load_parquet(
-            paths.review_fact_path,
-            sql=sql,
-            params=[str(paths.review_fact_path)],
-        )
+        rc_df = load_parquet(paths.review_fact_path, sql=sql)
         review_counts: pd.Series = rc_df.set_index("business_id")["review_count"]
     else:
         logger.warning(

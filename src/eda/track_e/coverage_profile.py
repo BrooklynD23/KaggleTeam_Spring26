@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.common.config import load_config
+from src.common.db import connect_duckdb
 from src.eda.track_e.common import (
     enforce_min_group_size,
     ensure_output_dirs,
@@ -228,13 +229,11 @@ def run(config: dict[str, Any]) -> None:
     # -- Load review fact (select needed columns only) ------------------------
     review_fact_path = paths.review_fact_path
     # Try to detect available star column name via DuckDB schema inspection.
-    import duckdb as _duckdb
-
-    con = _duckdb.connect()
+    pq_str = str(review_fact_path).replace("\\", "/")
+    con = connect_duckdb(config)
     try:
         col_query = con.execute(
-            "SELECT column_name FROM parquet_schema(?) WHERE column_name IN ('stars', 'review_stars')",
-            [str(review_fact_path)],
+            f"SELECT column_name FROM parquet_schema('{pq_str}') WHERE column_name IN ('stars', 'review_stars')"
         ).fetchdf()
     finally:
         con.close()
@@ -244,13 +243,13 @@ def run(config: dict[str, Any]) -> None:
     else:
         stars_col_sql = col_query["column_name"].iloc[0]
 
+    pq_str = str(review_fact_path).replace("\\", "/")
     reviews_df = load_parquet(
         review_fact_path,
         sql=(
             f"SELECT business_id, user_id, {stars_col_sql}, useful "
-            f"FROM read_parquet(?) "
+            f"FROM read_parquet('{pq_str}') "
         ),
-        params=[str(review_fact_path)],
     )
     logger.info("Loaded %d review rows", len(reviews_df))
 

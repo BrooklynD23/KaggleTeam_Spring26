@@ -22,6 +22,10 @@ data/raw/
 data/interim/
 outputs/
 
+# Allow data/sample/ for notebook EDA (stratified sample, committed)
+!data/sample/
+!data/sample/**
+
 # Large local/raw planning datasets
 CoWork Planning/Dataset(Raw)/
 CoWork Planning/yelp_project/docs/intern/.changes_manifest.json
