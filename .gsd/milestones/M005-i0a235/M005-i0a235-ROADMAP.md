@@ -1,4 +1,4 @@
-# M005-i0a235: M005-i0a235: Future multimodal extensions — Context
+# M005-i0a235: M005-i0a235: Future multimodal extensions - Context
 
 **Vision:** Deliver one real, bounded multimodal experiment that fuses Yelp photo information with existing non-image surfaces, measures value vs compute honestly, and yields a clear expand-or-stop decision without derailing the core semester path.
 
