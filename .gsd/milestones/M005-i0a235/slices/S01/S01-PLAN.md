@@ -39,7 +39,7 @@
 
 ## Tasks
 
-- [ ] **T01: Build the photo-intake contract module and integrity validator** `est:1h 45m`
+- [x] **T01: Build the photo-intake contract module and integrity validator** `est:1h 45m`
   - Why: Downstream fusion and experiments need a deterministic intake contract before any runtime wiring; otherwise missing/unreadable image issues stay implicit.
   - Files: `src/multimodal/photo_intake_contract.py`, `src/multimodal/__init__.py`, `tests/test_photo_intake_contract.py`, `configs/base.yaml`
   - Do: Implement metadata normalization and image-path resolution helpers; define status vocabulary and validation helpers for integrity counters; add pytest coverage for linked/missing/unreadable/usable and schema-drift branches.
