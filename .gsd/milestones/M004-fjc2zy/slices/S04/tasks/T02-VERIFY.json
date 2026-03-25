@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M004-fjc2zy/S04/T02",
+  "timestamp": 1774415097298,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "python -m pytest tests/test_showcase_parity_contract.py -q",
+      "exitCode": 0,
+      "durationMs": 495,
+      "verdict": "pass"
+    },
+    {
+      "command": "python scripts/check_showcase_parity.py --story outputs/showcase/story/sections.json --tracks outputs/showcase/story/tracks.json --report outputs/showcase/deliverables/showcase_report.md --deck outputs/showcase/deliverables/showcase_deck.md --output outputs/showcase/deliverables/parity_report.json",
+      "exitCode": 0,
+      "durationMs": 65,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -f outputs/showcase/deliverables/parity_report.json",
+      "exitCode": 0,
+      "durationMs": 6,
+      "verdict": "pass"
+    }
+  ]
+}

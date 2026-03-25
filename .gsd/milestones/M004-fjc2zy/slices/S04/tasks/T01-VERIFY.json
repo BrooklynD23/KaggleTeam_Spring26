@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M004-fjc2zy/S04/T01",
+  "timestamp": 1774414829970,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "python -m pytest tests/test_showcase_report_contract.py tests/test_showcase_deck_contract.py -q",
+      "exitCode": 0,
+      "durationMs": 310,
+      "verdict": "pass"
+    },
+    {
+      "command": "python scripts/build_showcase_report.py --story outputs/showcase/story/sections.json --tracks outputs/showcase/story/tracks.json --output outputs/showcase/deliverables",
+      "exitCode": 0,
+      "durationMs": 61,
+      "verdict": "pass"
+    },
+    {
+      "command": "python scripts/build_showcase_deck.py --story outputs/showcase/story/sections.json --tracks outputs/showcase/story/tracks.json --output outputs/showcase/deliverables",
+      "exitCode": 0,
+      "durationMs": 60,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -f outputs/showcase/deliverables/showcase_report.md",
+      "exitCode": 0,
+      "durationMs": 6,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -f outputs/showcase/deliverables/showcase_deck.md",
+      "exitCode": 0,
+      "durationMs": 5,
+      "verdict": "pass"
+    }
+  ]
+}

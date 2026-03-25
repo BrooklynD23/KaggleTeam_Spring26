@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M004-fjc2zy/S03/T03",
+  "timestamp": 1774413807169,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "python scripts/build_showcase_intake.py --config configs/showcase.yaml --output outputs/showcase/intake",
+      "exitCode": 0,
+      "durationMs": 62,
+      "verdict": "pass"
+    },
+    {
+      "command": "python scripts/build_showcase_story.py --config configs/showcase.yaml --intake outputs/showcase/intake/manifest.json --output outputs/showcase/story",
+      "exitCode": 0,
+      "durationMs": 62,
+      "verdict": "pass"
+    },
+    {
+      "command": "python scripts/build_showcase_tracks.py --config configs/showcase.yaml --intake outputs/showcase/intake/manifest.json --story outputs/showcase/story/sections.json --output outputs/showcase/story",
+      "exitCode": 0,
+      "durationMs": 75,
+      "verdict": "pass"
+    },
+    {
+      "command": "npm --prefix showcase run test -- --run",
+      "exitCode": 0,
+      "durationMs": 1795,
+      "verdict": "pass"
+    },
+    {
+      "command": "python scripts/showcase_smoke_check.py --manifest outputs/showcase/intake/manifest.json --story outputs/showcase/story/sections.json --tracks outputs/showcase/story/tracks.json --base-url http://127.0.0.1:3000",
+      "exitCode": 3,
+      "durationMs": 74,
+      "verdict": "fail"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2
+}

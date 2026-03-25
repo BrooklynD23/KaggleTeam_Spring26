@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M002-c1uww6/S03/T01",
+  "timestamp": 1774283184998,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "test -f outputs/modeling/track_b/scores_test.parquet",
+      "exitCode": 0,
+      "durationMs": 13,
+      "verdict": "pass"
+    }
+  ]
+}
