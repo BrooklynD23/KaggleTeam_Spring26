@@ -35,3 +35,26 @@ CoWork Planning/Complex, high-impact datasets for semester-scale data science pr
 # OS/editor noise
 .DS_Store
 Thumbs.db
+
+# ── GSD baseline (auto-generated) ──
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.code-workspace
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+dist/
+build/
+*.pyc
+venv/
+target/
+vendor/
+*.log
+coverage/
+.cache/
+tmp/
