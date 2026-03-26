@@ -14,12 +14,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 APPROACH_SHARED = "shared"
 APPROACH_TRACK_A = "track_a"
 APPROACH_TRACK_B = "track_b"
 APPROACH_TRACK_C = "track_c"
 APPROACH_TRACK_D = "track_d"
 APPROACH_TRACK_E = "track_e"
+APPROACH_PHOTO_INTAKE = "photo_intake"
 APPROACH_CHOICES = (
     APPROACH_SHARED,
     APPROACH_TRACK_A,
@@ -27,6 +32,7 @@ APPROACH_CHOICES = (
     APPROACH_TRACK_C,
     APPROACH_TRACK_D,
     APPROACH_TRACK_E,
+    APPROACH_PHOTO_INTAKE,
 )
 
 REPO_ROOT_MARKERS = (
@@ -636,6 +642,20 @@ PIPELINES: dict[str, tuple[StageDefinition, ...]] = {
             ),
         ),
     ),
+    APPROACH_PHOTO_INTAKE: (
+        StageDefinition(
+            stage_id="photo_intake_runtime",
+            runner="module",
+            module="src.multimodal.photo_intake",
+            config_path="configs/multimodal.yaml",
+            required_outputs=(
+                "outputs/multimodal/photo_intake/manifest.json",
+                "outputs/multimodal/photo_intake/validation_report.json",
+                "outputs/multimodal/photo_intake/photo_metadata.parquet",
+                "outputs/multimodal/photo_intake/image_path_manifest.parquet",
+            ),
+        ),
+    ),
 }
 
 
@@ -785,11 +805,15 @@ def choose_approach() -> str:
         "3": APPROACH_TRACK_B,
         "4": APPROACH_TRACK_C,
         "5": APPROACH_TRACK_D,
+        "6": APPROACH_TRACK_E,
+        "7": APPROACH_PHOTO_INTAKE,
         APPROACH_SHARED: APPROACH_SHARED,
         APPROACH_TRACK_A: APPROACH_TRACK_A,
         APPROACH_TRACK_B: APPROACH_TRACK_B,
         APPROACH_TRACK_C: APPROACH_TRACK_C,
         APPROACH_TRACK_D: APPROACH_TRACK_D,
+        APPROACH_TRACK_E: APPROACH_TRACK_E,
+        APPROACH_PHOTO_INTAKE: APPROACH_PHOTO_INTAKE,
     }
 
     while True:
@@ -799,13 +823,15 @@ def choose_approach() -> str:
         print("  3) track_b")
         print("  4) track_c")
         print("  5) track_d")
+        print("  6) track_e")
+        print("  7) photo_intake")
         print("  q) quit")
         choice = prompt_input("Choice: ").lower()
         if choice in {"q", "quit", "exit"}:
             raise SystemExit(0)
         if choice in mapping:
             return mapping[choice]
-        print("Invalid selection. Choose 1, 2, 3, 4, 5, or q.")
+        print("Invalid selection. Choose 1, 2, 3, 4, 5, 6, 7, or q.")
 
 
 def load_state(state_path: Path) -> dict[str, Any]:
@@ -1431,8 +1457,8 @@ def maybe_run_shared_prerequisites(
     auto_yes: bool,
     interpreter: Path | None,
 ) -> tuple[bool, int, Path | None]:
-    """Run shared prerequisites before Track A or Track B if needed."""
-    if selected_approach == APPROACH_SHARED:
+    """Run shared prerequisites before dependent approaches when needed."""
+    if selected_approach in {APPROACH_SHARED, APPROACH_PHOTO_INTAKE}:
         return True, 0, interpreter
 
     assessment = assess_pipeline(repo_root, state, APPROACH_SHARED)

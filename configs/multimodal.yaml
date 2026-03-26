@@ -1,0 +1,7 @@
+extends: base.yaml
+
+multimodal:
+  photo_intake:
+    metadata_path: "data/raw/Yelp-JSON/Yelp JSON/photos.json"
+    archive_dir: "data/raw/Yelp-JSON/Yelp JSON/photos"
+    output_root: "outputs/multimodal/photo_intake"

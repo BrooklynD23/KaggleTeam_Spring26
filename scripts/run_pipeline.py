@@ -35,6 +35,7 @@ APPROACH_ORDER = [
     dispatcher.APPROACH_TRACK_C,
     dispatcher.APPROACH_TRACK_D,
     dispatcher.APPROACH_TRACK_E,
+    dispatcher.APPROACH_PHOTO_INTAKE,
 ]
 
 APPROACH_LABELS = {
@@ -44,6 +45,7 @@ APPROACH_LABELS = {
     dispatcher.APPROACH_TRACK_C: "Track C",
     dispatcher.APPROACH_TRACK_D: "Track D",
     dispatcher.APPROACH_TRACK_E: "Track E",
+    dispatcher.APPROACH_PHOTO_INTAKE: "Photo Intake",
 }
 
 APPROACH_DESCRIPTIONS = {
@@ -53,6 +55,7 @@ APPROACH_DESCRIPTIONS = {
     dispatcher.APPROACH_TRACK_C: "Sentiment and topic drift",
     dispatcher.APPROACH_TRACK_D: "Cold-start recommendation",
     dispatcher.APPROACH_TRACK_E: "Bias and disparity auditing",
+    dispatcher.APPROACH_PHOTO_INTAKE: "Multimodal photo metadata intake",
 }
 
 APPROACH_ALIASES = {
@@ -72,6 +75,10 @@ APPROACH_ALIASES = {
     "track_e": dispatcher.APPROACH_TRACK_E,
     "track-e": dispatcher.APPROACH_TRACK_E,
     "e": dispatcher.APPROACH_TRACK_E,
+    "photo_intake": dispatcher.APPROACH_PHOTO_INTAKE,
+    "photo-intake": dispatcher.APPROACH_PHOTO_INTAKE,
+    "photo": dispatcher.APPROACH_PHOTO_INTAKE,
+    "p": dispatcher.APPROACH_PHOTO_INTAKE,
 }
 
 
@@ -198,7 +205,11 @@ def build_assessments(
             statuses[approach] = "complete"
         elif assessment.any_complete:
             statuses[approach] = "in_progress"
-        elif approach != dispatcher.APPROACH_SHARED and not shared_complete:
+        elif (
+            approach
+            not in {dispatcher.APPROACH_SHARED, dispatcher.APPROACH_PHOTO_INTAKE}
+            and not shared_complete
+        ):
             statuses[approach] = "blocked_shared"
         elif approach == dispatcher.APPROACH_TRACK_D and not track_d_split_ready:
             statuses[approach] = "blocked_track_a"
@@ -209,7 +220,11 @@ def build_assessments(
     for approach in APPROACH_ORDER:
         if statuses[approach] == "complete":
             continue
-        if approach != dispatcher.APPROACH_SHARED and not shared_complete:
+        if (
+            approach
+            not in {dispatcher.APPROACH_SHARED, dispatcher.APPROACH_PHOTO_INTAKE}
+            and not shared_complete
+        ):
             recommendation = dispatcher.APPROACH_SHARED
             break
         if approach == dispatcher.APPROACH_TRACK_D and not track_d_split_ready:
@@ -298,7 +313,7 @@ def render_dashboard(
     if total > 0:
         print(f"   {DIM}Outputs disk usage: {format_bytes(total)}{RST}")
 
-    print("Choose 1-6, R for recommended, or Q to quit.")
+    print("Choose 1-7, R for recommended, or Q to quit.")
 
 
 def choose_dashboard_approach(
@@ -319,7 +334,7 @@ def choose_dashboard_approach(
             index = int(choice) - 1
             if 0 <= index < len(APPROACH_ORDER):
                 return APPROACH_ORDER[index]
-        print("Invalid selection. Choose 1-6, R, or Q.")
+        print("Invalid selection. Choose 1-7, R, or Q.")
 
 
 def stage_list(approach: str) -> list[str]:

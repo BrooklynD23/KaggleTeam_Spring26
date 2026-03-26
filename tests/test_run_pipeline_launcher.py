@@ -88,6 +88,12 @@ def test_normalize_approach_accepts_aliases() -> None:
     assert run_pipeline.normalize_approach(args) == dispatcher.APPROACH_TRACK_A
 
 
+def test_normalize_approach_accepts_photo_intake_aliases() -> None:
+    """The launcher should expose discoverable aliases for photo intake."""
+    args = Namespace(approach=None, approach_alias="photo-intake")
+    assert run_pipeline.normalize_approach(args) == dispatcher.APPROACH_PHOTO_INTAKE
+
+
 def test_build_dispatcher_command_preserves_approach_and_stage() -> None:
     """Launcher passthrough should preserve approach, stage, and yes flag."""
     repo_root = Path("/repo")
@@ -110,6 +116,32 @@ def test_build_dispatcher_command_preserves_approach_and_stage() -> None:
         "feature_correlates",
         "--yes",
     ]
+
+
+def test_build_dispatcher_command_supports_photo_intake_branch() -> None:
+    """Launcher should construct canonical dispatcher calls for photo intake."""
+    repo_root = Path("/repo")
+    interpreter = Path("/repo/.venv-wsl/bin/python")
+
+    command = run_pipeline.build_dispatcher_command(
+        repo_root=repo_root,
+        interpreter=interpreter,
+        approach=dispatcher.APPROACH_PHOTO_INTAKE,
+        from_stage=None,
+        auto_yes=False,
+    )
+
+    assert command == [
+        str(interpreter),
+        str(repo_root / "scripts" / "pipeline_dispatcher.py"),
+        "--approach",
+        dispatcher.APPROACH_PHOTO_INTAKE,
+    ]
+
+
+def test_photo_intake_is_listed_in_launcher_approach_order() -> None:
+    """Interactive launcher menu should include photo intake as discoverable option."""
+    assert dispatcher.APPROACH_PHOTO_INTAKE in run_pipeline.APPROACH_ORDER
 
 
 def test_dispatcher_main_requires_explicit_approach() -> None:
