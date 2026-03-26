@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M004-fjc2zy/S03/T02",
+  "timestamp": 1774413373526,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "npm --prefix showcase run test -- --run",
+      "exitCode": 0,
+      "durationMs": 1661,
+      "verdict": "pass"
+    },
+    {
+      "command": "npm --prefix showcase run build",
+      "exitCode": 0,
+      "durationMs": 17764,
+      "verdict": "pass"
+    }
+  ]
+}

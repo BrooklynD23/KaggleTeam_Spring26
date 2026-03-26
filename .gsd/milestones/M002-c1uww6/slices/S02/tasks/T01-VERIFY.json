@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M002-c1uww6/S02/T01",
+  "timestamp": 1774280450888,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "test -f outputs/modeling/track_a/summary.md",
+      "exitCode": 0,
+      "durationMs": 7,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -f outputs/modeling/track_a/metrics.csv",
+      "exitCode": 0,
+      "durationMs": 7,
+      "verdict": "pass"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M004-fjc2zy/S02/T03",
+  "timestamp": 1774412199461,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "npm --prefix showcase run test -- --run",
+      "exitCode": 0,
+      "durationMs": 1646,
+      "verdict": "pass"
+    },
+    {
+      "command": "python scripts/build_showcase_story.py --config configs/showcase.yaml --intake outputs/showcase/intake/manifest.json --output outputs/showcase/story",
+      "exitCode": 0,
+      "durationMs": 61,
+      "verdict": "pass"
+    },
+    {
+      "command": "python scripts/showcase_smoke_check.py --manifest outputs/showcase/intake/manifest.json --story outputs/showcase/story/sections.json --base-url http://127.0.0.1:3000",
+      "exitCode": 3,
+      "durationMs": 74,
+      "verdict": "fail"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2
+}

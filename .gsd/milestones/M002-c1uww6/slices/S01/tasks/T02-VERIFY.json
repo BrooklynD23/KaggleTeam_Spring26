@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M002-c1uww6/S01/T02",
+  "timestamp": 1774253940324,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "test -d src/modeling/track_a",
+      "exitCode": 0,
+      "durationMs": 6,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -d src/modeling/track_b",
+      "exitCode": 0,
+      "durationMs": 13,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -d src/modeling/track_c",
+      "exitCode": 0,
+      "durationMs": 4,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -d src/modeling/track_d",
+      "exitCode": 0,
+      "durationMs": 5,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -f src/modeling/README.md",
+      "exitCode": 0,
+      "durationMs": 4,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -d outputs/modeling/track_a",
+      "exitCode": 0,
+      "durationMs": 6,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -d outputs/modeling/track_b",
+      "exitCode": 0,
+      "durationMs": 6,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -d outputs/modeling/track_c",
+      "exitCode": 0,
+      "durationMs": 6,
+      "verdict": "pass"
+    }
+  ]
+}

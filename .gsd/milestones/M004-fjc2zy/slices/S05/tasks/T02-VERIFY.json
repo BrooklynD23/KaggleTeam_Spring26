@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M004-fjc2zy/S05/T02",
+  "timestamp": 1774416522887,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "python -m pytest tests/test_showcase_demo_gate.py -q",
+      "exitCode": 0,
+      "durationMs": 193,
+      "verdict": "pass"
+    },
+    {
+      "command": "python scripts/run_showcase_demo_gate.py --config configs/showcase.yaml --base-url http://127.0.0.1:3000 --output outputs/showcase/verification/demo_gate_report.json",
+      "exitCode": 0,
+      "durationMs": 19749,
+      "verdict": "pass"
+    },
+    {
+      "command": "test -f outputs/showcase/verification/demo_gate_report.json",
+      "exitCode": 0,
+      "durationMs": 8,
+      "verdict": "pass"
+    }
+  ]
+}

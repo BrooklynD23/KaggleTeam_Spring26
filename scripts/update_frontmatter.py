@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from datetime import date
@@ -34,7 +35,23 @@ FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 def find_all_claude_mds() -> list[Path]:
     """Return all CLAUDE.md files under the repo root, sorted."""
-    return sorted(REPO_ROOT.rglob("CLAUDE.md"))
+    files: list[Path] = []
+
+    def _onerror(_err: OSError) -> None:
+        # Skip unreadable/corrupt directories instead of hard-failing the entire check.
+        return
+
+    for dirpath, dirnames, filenames in os.walk(REPO_ROOT, onerror=_onerror):
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in {".git", "node_modules", ".next", ".venv", ".venv-wsl", ".venv-win", ".venv-linux"}
+            and not d.startswith("__pycache__")
+        ]
+        if "CLAUDE.md" in filenames:
+            files.append(Path(dirpath) / "CLAUDE.md")
+
+    return sorted(files)
 
 
 def extract_frontmatter(path: Path) -> tuple[dict | None, str]:
